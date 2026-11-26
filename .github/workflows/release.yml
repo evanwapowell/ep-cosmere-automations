@@ -1,11 +1,18 @@
-# Publish a release when a version tag (v1.2.3) is pushed: run the tests, build module.json and module.zip
-# (files at the zip's root, without what .gitattributes marks export-ignore) and attach both to a GitHub release.
+# Build and attach module.json and module.zip to a GitHub release, either when a version tag (v1.2.3) is pushed
+# (tools/release.sh) or when a release is published on GitHub's website (Releases → Draft a new release → a new
+# tag like v0.3.0 on the branch to release). Runs the tests first. The zip has the files at its root, without what
+# .gitattributes marks export-ignore.
 # Foundry installs from https://github.com/evanwapowell/ep-cosmere-automations/releases/latest/download/module.json
 name: Release
 
 on:
   push:
     tags: ['v*.*.*']
+  release:
+    types: [published]
+
+concurrency:
+  group: release-${{ github.ref_name }}
 
 permissions:
   contents: write
@@ -41,9 +48,13 @@ jobs:
           (cd dist && zip -r ../module.zip .)
           unzip -l module.zip
 
-      - name: Publish the release
+      - name: Publish the release (or add the files to the one just published)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" module.zip module.json \
-            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" module.zip module.json --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" module.zip module.json \
+              --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
