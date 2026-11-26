@@ -1,18 +1,12 @@
 # Live pass: prompt for a Claude Code session on your computer
 
-## Before anything: publish release v0.3.0 (once, about a minute)
+## Install URL
 
-The install URL serves the latest GitHub release, and none exists yet. On github.com:
+Release v0.3.0 is published. In Foundry's Setup screen: Add-on Modules → Install Module → Manifest URL
 
-1. Open https://github.com/evanwapowell/ep-cosmere-automations/releases/new
-2. **Choose a tag** → type `v0.3.0` → "Create new tag: v0.3.0 on publish".
-3. **Target** → branch `ccr-fa029c81-c7h62m` (not main: the code isn't merged yet).
-4. Title `v0.3.0`; leave "Set as the latest release" ticked; **Publish release**.
-5. Open the repo's **Actions** tab: the "Release" workflow runs the tests and attaches `module.json` and
-   `module.zip` to the release (1–2 minutes). When it's green, the install URL works:
-   `https://github.com/evanwapowell/ep-cosmere-automations/releases/latest/download/module.json`
+    https://github.com/evanwapowell/ep-cosmere-automations/releases/latest/download/module.json
 
-(Or from a terminal in your clone: `git fetch origin && git tag v0.3.0 origin/ccr-fa029c81-c7h62m && git push origin v0.3.0`.)
+The same URL always serves the newest release, so later versions arrive through Foundry's Update button.
 
 ## Starting the session
 
@@ -48,8 +42,9 @@ server at https://ewap.club; the Setup screen is open and logged in as admin.
    it and say so. Don't create users with blank passwords without asking me.
 4. **When a check fails:** read the browser console (the module's lines start with `ep-cosmere-automations |`),
    find the cause in the code, fix it on the branch, run `node --test`, commit and push. To get the fix into
-   Foundry, release it: `tools/release.sh 0.3.1` (then 0.3.2, …) tags and pushes, and the "Release" GitHub Actions
-   workflow publishes it within a minute or two (check the repo's Actions tab). Then Setup → Add-on Modules →
+   Foundry, release it: `tools/release.sh 0.3.1` (then 0.3.2, …) bumps, tags and pushes, and the "Release" GitHub
+   Actions workflow publishes it within a minute or two (check the repo's Actions tab). Without push rights for
+   tags: Actions → Release → Run workflow, branch `ccr-fa029c81-c7h62m`, version `0.3.1`. Then Setup → Add-on Modules →
    Update, relaunch the world, and re-run the check. Group several small fixes into one release when you can.
    While iterating on one problem you may also test a change by running code in the GM's browser console first.
 5. **Answer these open questions while there:** does the token ruler / Cosmere Advanced Encounters show the halved

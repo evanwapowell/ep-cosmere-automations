@@ -28,6 +28,12 @@ in a game until they have been tested on a throwaway scene. See [DESIGN.md](DESI
 - **Every feature can be switched off.** Each condition and stances have a setting: full, remind only (a chat
   reminder, no changes) or off. Everything starts in remind-only mode.
 
+## Install
+
+Foundry Setup → Add-on Modules → Install Module → Manifest URL:
+
+    https://github.com/evanwapowell/ep-cosmere-automations/releases/latest/download/module.json
+
 ## API
 
 ```js
@@ -49,6 +55,7 @@ await api.endStance(actor);
 ## Development
 
 `npm test` (or `node --test`) runs the tests: the pure logic, plus a smoke test of the Foundry glue against a small
-fake Foundry. Release with `tools/release.sh <version>`.
+fake Foundry. Release with `tools/release.sh <version>` (bumps, tags, pushes), or Actions → Release → Run workflow
+with a branch and a version; the Release workflow tests, builds `module.zip` and publishes the GitHub release.
 
 Unofficial fan project; not affiliated with Brotherwise Games, Dragonsteel or The Metalworks.
