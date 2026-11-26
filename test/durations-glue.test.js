@@ -158,6 +158,28 @@ test('a long rest ends "until a long rest" effects and removes one Exhausted sta
     assert.deepEqual(statuses(teft), []);
 });
 
+test('a long rest leaves Exhausted to Cosmere Automated Actions when its decrementExhaustion is on', async () => {
+    const { modules, settings } = game;
+    const other = { useAutomations: true, decrementExhaustion: true };
+    game.modules = { get: (id) => (id === 'cosmere-automated-actions' ? { active: true } : modules.get(id)) };
+    game.settings = { ...settings, get: (scope, key) => (scope === 'cosmere-automated-actions' ? other[key] : settings.get(scope, key)) };
+    try {
+        const rock = new FakeActor({ name: 'Rock' });
+        await api.apply(rock, 'exhausted', { stacks: 2 });
+        await flush();
+        Hooks.callAll('cosmere-rpg.rest', rock, 'long');
+        await flush();
+        assert.equal(rock.effects.contents[0].system.stacks, 2, 'the other module takes the stack, not us');
+        other.decrementExhaustion = false;
+        Hooks.callAll('cosmere-rpg.rest', rock, 'long');
+        await flush();
+        assert.equal(rock.effects.contents[0].system.stacks, 1, 'with it off, we do');
+    } finally {
+        game.modules = modules;
+        game.settings = settings;
+    }
+});
+
 test('days pass; until used', async () => {
     const lift = new FakeActor({ name: 'Lift' });
     await api.apply(lift, 'slowed', { duration: { kinds: 'days', days: 2 } });

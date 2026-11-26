@@ -14,7 +14,7 @@ import { FLAGS, MODES, MODULE_ID, OPTION_KEYS, SYSTEM_ID } from './constants.js'
 import { advance, describeDuration, newDuration, parseDurationSpec, phaseIndex } from './logic/durations.js';
 import { isEndStance } from './logic/stances.js';
 import { conditionIdOf } from './logic/table.js';
-import { allActors, conditionMode, featureMode, setting, SETTINGS, stanceMode } from './settings.js';
+import { allActors, conditionMode, featureMode, otherModuleReducesExhaustion, setting, SETTINGS, stanceMode } from './settings.js';
 import { endStance } from './stances.js';
 import { actorName, esc, isActiveGM, safe, serial, t } from './util.js';
 
@@ -201,10 +201,13 @@ async function onRest(actor, restType) {
     await reduceExhaustion(actor);
 }
 
-/** A long rest removes one stack of Exhausted (the system leaves this to the GM). */
+/**
+ * A long rest removes one stack of Exhausted (the system leaves this to the GM). Skipped when Cosmere Automated
+ * Actions already does it, so the stack isn't taken twice (or the effect deleted twice).
+ */
 async function reduceExhaustion(actor) {
     const mode = conditionMode('exhausted');
-    if (mode === MODES.OFF) return;
+    if (mode === MODES.OFF || otherModuleReducesExhaustion()) return;
     const effect = actor.effects.find((e) => conditionIdOf(e.statuses, CONDITIONS_BY_ID) === 'exhausted');
     if (!effect) return;
     const stacks = effect.system?.stacks ?? 1;

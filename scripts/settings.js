@@ -212,6 +212,21 @@ export function featureMode(key) {
     }
 }
 
+/**
+ * Whether Cosmere Automated Actions takes a stack of Exhausted off on a long rest itself (its "decrementExhaustion"
+ * setting, under its master switch). Both doing it race: seen live 2026-11-25, at one stack both delete the
+ * effect and one of the deletes fails.
+ */
+export function otherModuleReducesExhaustion() {
+    const other = 'cosmere-automated-actions';
+    if (!game.modules?.get(other)?.active) return false;
+    try {
+        return game.settings.get(other, 'useAutomations') !== false && game.settings.get(other, 'decrementExhaustion') === true;
+    } catch {
+        return false;
+    }
+}
+
 export function setting(key, fallback) {
     try {
         return game.settings.get(MODULE_ID, key);
