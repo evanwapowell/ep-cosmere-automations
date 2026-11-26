@@ -29,6 +29,20 @@ export function safe(label, fn) {
     };
 }
 
+/**
+ * Create effects that carry one status of their own (the stance marker, Dodging, Bracing, Advantage gained).
+ * The system's `ActiveEffect._preCreate` reads `this.id` for every effect with exactly one status, and the id is
+ * still null at that point unless it is chosen by the caller and kept: such an effect created without `keepId`
+ * throws in cosmere-rpg 3.1.2 (seen live 2026-11-25). So the id is chosen here.
+ * @param {Actor} actor
+ * @param {object[]} list effect data
+ * @param {object} [options] passed on to `createEmbeddedDocuments`
+ */
+export function createOwnEffects(actor, list, options = {}) {
+    const data = list.map((d) => ({ ...d, _id: d._id ?? foundry.utils.randomID(16) }));
+    return actor.createEmbeddedDocuments('ActiveEffect', data, { ...options, keepId: true });
+}
+
 /** Localize with an English fallback when the key is missing. */
 export function t(key, data, fallback) {
     const full = `${MODULE_ID}.${key}`;

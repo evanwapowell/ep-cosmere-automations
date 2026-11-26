@@ -8,7 +8,7 @@ import { postLine } from './chat.js';
 import { FLAGS, MODES, MODULE_ID, OPTION_KEYS, SYSTEM_ID } from './constants.js';
 import { buildDuration } from './durations.js';
 import { featureMode, SETTINGS } from './settings.js';
-import { actorName, esc, safe, t } from './util.js';
+import { actorName, createOwnEffects, esc, safe, t } from './util.js';
 
 const BUTTON = `${MODULE_ID}-grant`;
 
@@ -65,7 +65,7 @@ export async function createSituational(actor, id, { target = null, img, duratio
         description: entry.summary,
         flags: { [MODULE_ID]: { [FLAGS.SITUATIONAL]: id, [FLAGS.VALUE]: value, ...(state ? { [FLAGS.DURATION]: state } : {}) } },
     };
-    const [created] = await actor.createEmbeddedDocuments('ActiveEffect', [data]);
+    const [created] = await createOwnEffects(actor, [data]);
     await postLine(
         actor,
         t('chat.situational', { actor: `<b>${esc(actorName(actor))}</b>`, effect: `<b>${esc(data.name)}</b>` }, '{actor}: {effect}.'),

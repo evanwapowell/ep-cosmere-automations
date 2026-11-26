@@ -14,7 +14,7 @@ import {
     readSources,
     removeSource,
 } from '../scripts/logic/sources.js';
-import { findModalityTalent, isEndStance, normalizeId, relationshipList } from '../scripts/logic/stances.js';
+import { findModalityTalent, isEndStance, normalizeId, relationshipList, talentMode } from '../scripts/logic/stances.js';
 import { EFFECT_MODES, formatValue, instanceId, normalizeValue, valueEffectData } from '../scripts/logic/values.js';
 
 const full = () => true;
@@ -231,6 +231,14 @@ test('without a relationship, the action id is matched to the talent id', () => 
 
 test('items with their own modality are left to the system', () => {
     assert.equal(findModalityTalent({ system: { id: 'stonestance', modality: 'stance' } }, items), null);
+});
+
+test('talentMode: only a talent with a modality and an id switches a mode', () => {
+    assert.deepEqual(talentMode({ type: 'talent', system: { id: 'stonestance', modality: 'stance' } }), { modality: 'stance', id: 'stonestance' });
+    assert.equal(talentMode({ type: 'talent', system: { id: 'tough' } }), null);
+    assert.equal(talentMode({ type: 'action', system: { id: 'end-stance', modality: 'stance' } }), null, 'actions are the system\'s');
+    assert.equal(talentMode({ type: 'talent', system: { modality: 'stance' } }), null);
+    assert.equal(talentMode(null), null);
 });
 
 test('isEndStance', () => {

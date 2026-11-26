@@ -77,6 +77,21 @@ class Collection extends Map {
 
 export class Actor {}
 
+/**
+ * The system's item, reduced to `use()`: like cosmere-rpg 3.1.2, it returns null for anything that is not an
+ * action (talents included). Actions record the call and return a marker.
+ */
+export class FakeItem {
+    constructor(data) {
+        Object.assign(this, data);
+    }
+    async use(options = {}) {
+        if (this.type !== 'action') return null;
+        this.useCalls = [...(this.useCalls ?? []), options];
+        return 'used';
+    }
+}
+
 const actorsByUuid = new Map();
 
 /**
@@ -238,6 +253,11 @@ export class FakeActor extends Actor {
         Hooks.callAll('updateActor', this, { flags: { [scope]: { [key.split('.')[0]]: getProperty(this.flags, `${scope}.${key.split('.')[0]}`) } } }, {}, globalThis.game.user.id);
     }
     async unsetFlag(scope, key) {
+        // cosmere-rpg 3.1.2: the system's preUpdateActor reads {mode: {'-=stance': null}} as a modality named
+        // "-=stance", writes `meta.update.mode.-=stance: undefined`, and Foundry rejects the update.
+        if (scope === 'cosmere-rpg' && key.startsWith('mode.')) {
+            throw new Error('Removing a key using the -= deletion syntax requires the value of that deletion key to be null');
+        }
         const parts = key.split('.');
         const parent = getProperty(this.flags, [scope, ...parts.slice(0, -1)].join('.'));
         if (parent) delete parent[parts.at(-1)];
@@ -271,6 +291,11 @@ export class FakeActor extends Actor {
         const userId = globalThis.game.user.id;
         const created = [];
         for (const data of list) {
+            // cosmere-rpg 3.1.2's ActiveEffect._preCreate reads `this.id.startsWith(...)` for an effect with exactly
+            // one status; the id is null there unless the caller chose it and kept it.
+            if ((data.statuses ?? []).length === 1 && !(options.keepId && data._id)) {
+                throw new TypeError("Cannot read properties of null (reading 'startsWith')");
+            }
             const effect = new FakeEffect({ _id: data._id && options.keepId ? data._id : randomID(), ...data, ...(options.keepId ? {} : { _id: randomID() }) }, this);
             if (Hooks.call('preCreateActiveEffect', effect, data, options, userId) === false) continue;
             if (this.effects.has(effect.id)) throw new Error(`duplicate id ${effect.id}`);
@@ -378,6 +403,7 @@ export function installFakeFoundry({ settings: overrides = {} } = {}) {
         CONFIG: {
             Dice: { rolls: [D20Roll] },
             Actor: { documentClass: FakeActor },
+            Item: { documentClass: FakeItem },
             ActiveEffect: { documentClass: FakeEffect },
             statusEffects: STATUS_IDS.map((id) => ({
                 id,

@@ -136,7 +136,8 @@ test('ending the encounter ends combat durations and the scene: stances end, per
 
     await combat.end();
     assert.deepEqual(statuses(adolin), ['slowed']);
-    assert.equal(adolin.getFlag('cosmere-rpg', 'mode.stance'), undefined);
+    assert.equal(adolin.getFlag('cosmere-rpg', 'mode.stance'), null);
+    assert.ok(!has(adolin, 'ep-stance'), 'the stance marker is gone');
     assert.deepEqual(recharged, ['uses']);
 });
 

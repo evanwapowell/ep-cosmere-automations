@@ -203,6 +203,54 @@ test('a stance action without End Stance: endStance clears the flag and the mark
     assert.ok(actor.effects.find((e) => e.statuses.has('ep-stance')));
     await api.endStance(actor);
     await flush();
-    assert.equal(actor.getFlag('cosmere-rpg', 'mode.stance'), undefined);
+    // Not unsetFlag (the system rejects it): setMode with null, which disables every stance effect.
+    assert.deepEqual(actor.modeCalls.at(-1), ['stance', null]);
+    assert.equal(actor.getFlag('cosmere-rpg', 'mode.stance'), null);
     assert.equal(actor.effects.find((e) => e.statuses.has('ep-stance')), undefined);
+});
+
+test('using a stance talent itself (the sheet, the handbook data) enters the stance; other items are untouched', async () => {
+    Hooks.callAll('setup'); // wraps Item.use
+    const Item = CONFIG.Item.documentClass;
+    const stonestance = new Item({ id: 'T1', type: 'talent', name: 'Stonestance', img: 'stone.svg', system: { id: 'stonestance', modality: 'stance' } });
+    const plainTalent = new Item({ id: 'T2', type: 'talent', name: 'Tough', system: { id: 'tough' } });
+    const dodge = new Item({ id: 'A1', type: 'action', name: 'Dodge', system: { id: 'dodge' } });
+    const actor = new FakeActor({ name: 'Kal', items: [stonestance, plainTalent, dodge] });
+
+    assert.equal(await stonestance.use(), null);
+    await flush();
+    assert.deepEqual(actor.modeCalls, [['stance', 'stonestance']]);
+    assert.equal(actor.effects.find((e) => e.statuses.has('ep-stance'))?.name, 'Stance: Stonestance');
+
+    assert.equal(await stonestance.use(), null, 'already in it: nothing new');
+    assert.equal(actor.modeCalls.length, 1);
+    assert.equal(await plainTalent.use(), null, 'a talent without modality goes to the system');
+    assert.equal(await dodge.use({ x: 1 }), 'used', 'actions go to the system unchanged');
+    assert.deepEqual(dodge.useCalls, [{ x: 1 }]);
+
+    Hooks.callAll('setup');
+    await stonestance.use();
+    assert.equal(actor.modeCalls.length, 1, 'wrapping twice does not double up');
+
+    env.settings.set('stances', 'remind');
+    try {
+        const before = env.chat.length;
+        const vine = new Item({ id: 'T3', type: 'talent', name: 'Vinestance', img: 'v.svg', system: { id: 'vinestance', modality: 'stance' } });
+        const navani = new FakeActor({ name: 'Navani', items: [vine] });
+        await vine.use();
+        await flush();
+        assert.equal(navani.modeCalls, undefined, 'remind mode changes nothing');
+        assert.ok(env.chat.slice(before).some((m) => m.content.includes('Vinestance')));
+    } finally {
+        env.settings.set('stances', 'full');
+    }
+});
+
+test('effects with a status of their own (marker, Dodging) are created with a kept id, as the system needs', async () => {
+    const actor = new FakeActor({ name: 'Brute', type: 'adversary' });
+    await api.mark(actor, 'dodging');
+    await flush();
+    const dodging = actor.effects.find((e) => e.getFlag('ep-cosmere-automations', 'situational') === 'dodging');
+    assert.ok(dodging, 'Dodging created');
+    assert.equal(dodging.id.length, 16);
 });

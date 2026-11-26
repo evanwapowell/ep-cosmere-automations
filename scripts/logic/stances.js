@@ -1,9 +1,11 @@
 /**
  * Stance helpers. Pure functions, no Foundry globals.
  *
- * In the system, a stance is a talent with `system.modality: 'stance'`. Its activation cost sits on an
- * action the talent grants (e.g. action `stone-stance` from talent `stonestance`). Using that action does not
- * call `actor.setMode`, so the stance's effects never switch on. These helpers find the talent behind an action.
+ * In the system, a stance is a talent with `system.modality: 'stance'`. In some data its activation cost sits
+ * on an action the talent grants (e.g. action `stone-stance` from talent `stonestance`); using that action does
+ * not call `actor.setMode`, so the stance's effects never switch on. These helpers find the talent behind an
+ * action. In other data (the Stormlight Handbook talents in a live world, 2026-11-25) there is no such action
+ * and the talent itself is listed as usable on the sheet: see `talentMode`.
  */
 
 /** Lowercase, letters and digits only: `stone-stance` and `Stonestance` both become `stonestance`. */
@@ -47,6 +49,20 @@ export function findModalityTalent(action, items) {
     const actionId = normalizeId(action.system.id);
     if (!actionId) return null;
     return talents.find((t) => normalizeId(t.system.id) === actionId) ?? null;
+}
+
+/**
+ * The mode a talent switches on when it is used itself: `{modality, id}`, or null for anything that is not a
+ * talent with a modality and an id. The system's `item.use()` returns null for every non-action, so a stance
+ * talent used from the sheet (the Stormlight Handbook data has no separate stance actions) does nothing unless
+ * the module handles it.
+ * @param {{type?: string, system?: {id?: string, modality?: string}}} item
+ */
+export function talentMode(item) {
+    if (item?.type !== 'talent') return null;
+    const modality = item.system?.modality;
+    const id = item.system?.id;
+    return modality && id ? { modality, id } : null;
 }
 
 /** Whether a mode id means "no stance" (the handbook's End Stance talent). */
