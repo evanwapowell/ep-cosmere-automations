@@ -12,8 +12,9 @@ conditions.
   effects", is in its backlog with no date, so we build it here.
 - **Who it's for:** any table using the system, played by hand. It also exposes an API that a GM helper module
   (`claude-gm-tools`) can call.
-- **Status:** phases 1–3 written (2026-11-26): unit-tested in Node against a fake Foundry, **not yet tried in a
-  live world**. See "Phase 1 as built", "Phase 2 as built" and "Phase 3 as built".
+- **Status:** phases 1–3 written (2026-11-26) and given a first live pass (Foundry 13.351, cosmere-rpg 3.1.2,
+  Stormlight Handbook data, Advanced Encounters, Automated Actions): 19 of 21 checks pass on v0.3.1 after six
+  fixes; two need a second login. See "Live pass results" below and the "Phase 1/2/3 as built" sections.
 
 ## Ground rules
 
@@ -75,6 +76,11 @@ formulas read `@attr.<id>` = `value` only; source checked 2026-11-26),
   test includes the skill's `mod.bonus` even with another attribute. Attack type: `item.system.attack.type`
   (`melee` / `ranged`). Basic action ids: `dodge` (reaction), `brace`, `gain_advantage`.
 - `cosmere-rpg.skillRoll` / `attackRoll` fire **after** evaluation (too late to change the total).
+- **The attack hooks get a "Strike: X" action, not the weapon** (live 2026-11-25): a character's is an item embedded
+  in the equipped weapon (attack type on the parent weapon); an adversary's is a plain action with no attack data
+  ("Reach 5 ft." / "Range 80/120 ft." in its description). Both go through `preAttackRollConfiguration`.
+- **The chat card is rebuilt after `renderChatMessageHTML`**: the system's `renderHTML` replaces `.message-content`
+  with its own card for messages with a system type; add things beside it, not inside.
 - `cosmere-rpg.preDamageRoll(roll, source, config)` before a damage roll is evaluated.
 - `actor.rollSkill()` uses `skill.mod.value` (so `mod.bonus` counts), **except** when the test is rolled with
   another attribute (`options.attribute`): then it sums that attribute's `value + bonus` and the skill rank, and the
@@ -112,6 +118,13 @@ that depends on them ("half your movement") has to run after this method.
   effects with no changes. An "End Stance" talent exists.
 - Nothing ends a stance at the end of the scene; the stance effect is non-temporary, so it shows on the sheet but not
   on the token; `actor.clearMode()` filters on the wrong field and is never called by the system (don't use it).
+- **A mode flag can't be unset** (live 2026-11-25): `unsetFlag('cosmere-rpg', 'mode.stance')` throws, because the
+  system's `preUpdateActor` treats `-=stance` as a modality name. `actor.setMode('stance', null)` works and disables
+  every stance effect.
+- In the Stonewalkers world the stance talents grant no separate stance action: the sheet lists the talent under
+  "Miscellaneous Actions", and its use control does nothing (`item.use()` is null for non-actions).
+- An effect with exactly one status must be created with a chosen `_id` and `keepId: true`: the system's
+  `_preCreate` reads `this.id.startsWith(...)` (live 2026-11-25).
 
 **Turns and rounds**
 - The system's combat calls `cosmere-rpg.combatRoundStart` / `combatRoundEnd` from `startCombat` / `nextRound` on
@@ -492,6 +505,95 @@ What the code does, and where it differs from the plan above.
   attack doesn't; a player's attack on an NPC who used Dodge rolls with disadvantage and removes Dodging (GM logged
   in, player attacking); Brace then move the token: Bracing ends; Gain Advantage with a target, press the button,
   then a test against that target has an advantage once; the chat card shows the reason line.
+
+## Live pass results (2026-11-25/26)
+
+First run in a real world, following `docs/LIVE-PASS.md`: Foundry 13.351, cosmere-rpg 3.1.2, Stormlight Handbook
+content, Cosmere Advanced Encounters 1.3.1 and Cosmere Automated Actions 1.3.1 active, GM user only. Test scene
+`zz live pass` with `zz Kal`, `zz Shallan` (characters) and `zz Brute` (an adversary from the world guide); all
+deleted afterwards with their chat messages, and the module's settings put back to remind-only. Started on
+v0.3.0; the fixes below were released as **v0.3.1** and every failed check was re-run on it.
+
+**Checks**
+
+| # | Result | Seen |
+|---|--------|------|
+| 1 | pass | Prone from the token's status toggle: Slowed follows ("from Prone"), walking speed 30 → 15; removing Prone removes both. One chat line each. |
+| 2 | pass | Unconscious → Prone → Slowed, movement 0; all three end together. |
+| 3 | pass | Exhausted, then 2 stacks: every skill modifier −2, the effect is named "Exhausted [-2]", a fast-forwarded Athletics total agrees. (See Automated Actions below for the formula.) |
+| 4 | pass | `apply(kal, 'enhanced', {value: {attribute: 'spd', amount: 2}})`: "Enhanced [Speed +2]", Speed skills 3 → 5, walking 30 → 40, Physical defense unchanged. |
+| 5 | pass | Afflicted from the Token HUD opens the dialog (damage, type); "Afflicted [3 Energy]". |
+| 6 | **fail → fixed** | Using Stonestance on the sheet did nothing (see fix 1); ending a stance threw (fix 2); the marker could not be created (fix 3). On v0.3.1: the sheet click enters the stance, deflect 0 → 1, marker "Stance: Stonestance" on the token, chat line; `api.endStance` clears it, deflect back to 0. |
+| 7 | answered | The token ruler does not show the halved speed: neither the system nor Advanced Encounters customizes Foundry's ruler, which only measures distance. The sheet shows it (Move 15 ft). |
+| 8 | pass | Stunned "until the end of its next turn" applied during Kal's turn survives that turn and ends at the end of Kal's next turn ("its duration ended"). |
+| 9 | pass | Restrained on the Brute from the HUD during Shallan's slow turn: the dialog asks "Lasts"; "until the start of the slow PC phase next round" survives the Brute's turn, the new round and Kal's fast turn, ends as Shallan's slow turn starts. |
+| 10 | pass | Surprised applied at round 1 before any turn ends after the Brute's first turn. |
+| 11 | skipped | Needs a second GM login; none available. |
+| 12 | pass (v0.3.1) | Ending the encounter: Empowered (end of scene) ends, the stance ends (deflect back), Recover recharges 0 → 1; a chat line for each. |
+| 13 | pass | A long rest takes Exhausted 2 → 1 (see fix 6 for the overlap with Automated Actions). |
+| 14 | pass | "End scene (EP Cosmere Automations)" is in the token controls (flag icon) and asks for confirmation first. |
+| 15 | pass (card fixed) | Restrained: the Athletics dialog opens with the d20 on disadvantage; fast-forwarded tests too (`2d20kl`). The card's reason line was missing (fix 4); on v0.3.1 it shows. |
+| 16 | **fail → fixed** | Sword attack on a Prone target opened without advantage (fix 5). On v0.3.1: the dialog opens with advantage, the card shows "Advantage: target Prone."; the bow gets none. |
+| 17 | pass (v0.3.1) | The Brute uses Dodge (system asks to spend 1 focus) → Dodging; Kal's attack opens with disadvantage, card "Disadvantage: target Dodging.", Dodging is gone afterwards. |
+| 18 | skipped | Needs a player login that owns `zz Shallan`; none available. The relay is covered by the Node tests only. |
+| 19 | pass (v0.3.1) | Kal uses Brace → Bracing; the Brute's Strike: Mace on Kal opens with disadvantage; moving Kal's token ends Bracing ("it moved"). |
+| 20 | pass (v0.3.1) | Gain Advantage with the Brute targeted posts the card; "The test succeeded" creates "Advantage gained: zz Brute" and disables the button; Kal's next test against the Brute rolls `2d20kh`, the effect is used up, the test after is normal. |
+| 21 | pass | In Flamestance, Intimidation rolls with advantage ("Advantage: Flamestance."); Deception does not. |
+
+**Fixes** (branch `ccr-fa029c81-c7h62m`, released as v0.3.1, commit 8374be1)
+
+1. *Stances from the sheet* (9c94ebd). The handbook's stance talents grant no separate action; the sheet lists the
+   talent itself as usable, and the system's `item.use()` returns null for anything that is not an action, so no
+   hook fired. `Item.use` is wrapped (on `setup`): a talent with a modality enters its mode, following the stance
+   setting; everything else goes to the system unchanged. (The sheet also posts the talent's own card; harmless.)
+2. *Ending a stance* (9c94ebd). `actor.unsetFlag('cosmere-rpg', 'mode.stance')` always throws: the system's
+   `preUpdateActor` reads `{mode: {'-=stance': null}}` as a modality named "-=stance" and writes an `undefined`
+   deletion key, which Foundry rejects. (The system's own `clearMode` has the same problem.) `endStance` now calls
+   `setMode('stance', null)` (or End Stance's id), which also disables every stance effect.
+3. *Effects with a status of their own* (9c94ebd). The system's `ActiveEffect._preCreate` reads `this.id` for any
+   effect with exactly one status; it is null unless the id is chosen and `keepId` is set. The stance marker and
+   Dodging / Bracing / Advantage gained now get a random 16-character id (`createOwnEffects`).
+4. *The card's reason line* (7497efb). The system's `ChatMessage.renderHTML` runs Foundry's render (which fires
+   `renderChatMessageHTML`) and then replaces `.message-content` with its own card. The note now goes just before
+   `.message-content` as a sibling, which survives.
+5. *Melee or ranged* (3061ca2). The attack hooks get the system's "Strike: X" action, not the weapon: for a
+   character it is an item embedded in the weapon with no attack data (the type is on the parent weapon); for an
+   adversary it is a plain action whose description says "Reach 5 ft." or "Range 80/120 ft.". `attackTypeOf`
+   reads the item, the parent weapon, then the description (neither or both words: unknown, melee/ranged rules
+   skipped).
+6. *Long rest and Automated Actions* (73eb616). With its "decrementExhaustion" on, both modules took the stack: at
+   two stacks both wrote 1 (same stale value), at one stack both deleted the effect and ours failed. Ours now
+   skips when that setting is on (under its master switch).
+
+The fake Foundry in `test/` now reproduces the system behaviors behind fixes 1–3 (non-actions' `use()` returns
+null, `unsetFlag` on a mode throws, single-status effects need a kept id); tests cover all six (114 pass).
+
+**Open questions answered**
+
+- *Token ruler / Advanced Encounters and Slowed:* no (check 7). Only the sheet shows the halved speed.
+- *Automated Actions' "Let conditions modify rolls":* **on** in this world. It does not change the total, but after
+  the roll it appends "- 2" to the formula for Exhausted 2 (seen: `1d20 + 0 - 2 = 6` on a d20 of 6; our −2 is
+  already in the `+ 0`). So the total is right and the card's formula is misleading. **Decision for the GM:** turn
+  that setting off while this module's Exhausted is at full.
+- *"End scene" button:* yes (check 14).
+- *Advantage/disadvantage reason line on the card:* not on v0.3.0; yes on v0.3.1 (fix 4).
+- *Roll dialog opens with the expected button:* yes, the skill and attack dialogs show the d20 already on
+  advantage or disadvantage (the system shows the mode on the die, not in the formula text).
+
+**Other things seen**
+
+- Advanced Encounters' ▶| button in the tracker advances the **round** (it ended Kal's turn and skipped the rest of
+  round 1); turns are started with "Activate Combatant" and ended with `combat.nextTurn()`. Durations followed
+  both correctly.
+- A condition turned on by hand during combat opens the "Lasts" dialog (setting "ask during combat"); removing the
+  condition while the dialog is open correctly skips its start line and links.
+- With the same user connected from two browser tabs, every handler that checks "the user who made the change"
+  runs in both, so chat lines doubled and linked conditions raced (errors "does not exist"). Not seen with one
+  connection. Worth knowing for a GM who opens the game twice; not fixed.
+- Weapons need to be equipped before their "Strike: X" actions appear on the sheet.
+
+**Still open:** checks 11 (two GMs: one chat line per event) and 18 (player attack using up an NPC's Dodging
+through the GM relay) need a second login.
 
 ## Development
 
