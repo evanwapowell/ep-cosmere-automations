@@ -12,7 +12,8 @@ conditions.
   effects", is in its backlog with no date, so we build it here.
 - **Who it's for:** any table using the system, played by hand. It also exposes an API that a GM helper module
   (`claude-gm-tools`) can call.
-- **Status:** design only (2026-11-25). Nothing built yet.
+- **Status:** phase 1 written (0.1.0, 2026-11-26): unit-tested in Node against a fake Foundry, **not yet tried in
+  a live world**. See "Phase 1 as built".
 
 ## Ground rules
 
@@ -48,7 +49,9 @@ Re-check against the source when building.
 
 **Data an effect can change** (derived values are `value = base + bonus`, with `base` = `override` when
 `useOverride`, computed when read):
-`system.skills.<id>.mod.bonus`, `system.attributes.<id>.bonus` (note: also raises defenses),
+`system.skills.<id>.mod.bonus`, `system.attributes.<id>.bonus` (feeds skill modifiers, walking speed, senses
+range and lifting capacity; **not** defenses, which sum `attributes.<id>.value` only, and not max resources, whose
+formulas read `@attr.<id>` = `value` only; source checked 2026-11-26),
 `system.defenses.<phy|cog|spi>.bonus`, `system.deflect.bonus`, `system.movement.<walk|fly|swim>.rate.bonus /
 .override / .useOverride`, `system.resources.<hea|foc|inv>.max.bonus`, `system.injuryRollBonus`.
 
@@ -62,6 +65,14 @@ Re-check against the source when building.
   when the roll dialog opens (not on fast-forward): use them to pre-select the dialog's buttons.
 - `cosmere-rpg.skillRoll` / `attackRoll` fire **after** evaluation (too late to change the total).
 - `cosmere-rpg.preDamageRoll(roll, source, config)` before a damage roll is evaluated.
+- `actor.rollSkill()` uses `skill.mod.value` (so `mod.bonus` counts), **except** when the test is rolled with
+  another attribute (`options.attribute`): then it sums that attribute's `value + bonus` and the skill rank, and the
+  skill's `mod.bonus` is skipped.
+
+**Order of data preparation** (`CosmereActor.prepareDerivedData`): Foundry's derived step, then
+`applyActiveEffects()`, then `system.prepareSecondaryDerivedData()`, which computes walking speed from Speed,
+defenses, skill modifiers and deflect. So effects run **before** walking speed and skill modifiers exist; anything
+that depends on them ("half your movement") has to run after this method.
 
 **Damage, injuries, rest, items, combat**
 - `actor.applyDamage([{amount, type}, …], {originatingItem})` sums all deflectable amounts, subtracts deflect once,
@@ -76,6 +87,8 @@ Re-check against the source when building.
   Surprised and Disoriented at turn start.
 
 **Stances ("modality")**
+- A granted action records the talent that granted it in `system.relationships` (`{type: 'parent', itemType,
+  uuid}`), written by the system's GrantItems event handler.
 - Stance talents have `system.modality: 'stance'`. `actor.setMode('stance', talent.system.id)` sets the actor flag
   `cosmere-rpg.mode.stance`, **enables that talent's own effects and disables the other stances' effects** (verified
   live 2026-11-25: Stonestance deflect +1, then back).
@@ -138,9 +151,13 @@ From the system 3.1.2 source:
    situational effect: rule summary and source page, value type (none, number, damage type + amount, attribute + amount),
    stacking, effect changes, roll modifiers, default duration, linked conditions, triggers. Adding a talent later means
    adding an entry, not code. Being plain data also makes it something we could offer to the system later.
-2. **Static mechanics through effect changes.** At `setup`, the engine adds `changes` to the system's
-   `CONFIG.statusEffects` entries, so any newly toggled condition carries its mechanics, whoever toggles it. A one-time
-   "refresh conditions" command updates condition effects already on actors (they were created without changes).
+2. **Static mechanics.** *(Changed while building phase 1; see "Phase 1 as built".)* Two kinds:
+   - *Derived adjustments*, for mechanics that depend on derived values or stacks (movement 0, half movement,
+     Exhausted): the engine wraps the actor's `prepareDerivedData` and, after the system's own derivation, adjusts
+     `movement.<type>.rate.bonus` and `skills.<id>.mod.bonus` for the conditions the actor has. Nothing is stored,
+     so there is nothing to refresh, settings take effect at once, and turning the module off undoes it.
+   - *Effect changes*, for mechanics that come from a value: Enhanced writes `system.attributes.<id>.bonus +X` on
+     its own effect when created (from the API, or after the value dialog).
 3. **Roll modifiers.** One roll handler collects advantages, disadvantages and penalties from the roller's and the
    target's effects (target = the roller's current target), nets advantages against disadvantages one for one
    (handbook ch. 9, "Advantages and Disadvantages"), sets the roll's mode and adds a line to the roll's flavor saying why. Hooks:
@@ -185,13 +202,13 @@ The 22 statuses the system defines, with the Stormlight rules summarized in our 
 | Determined | When you fail a test, add an Opportunity; then removed | Trigger: button on a failed test's card; duration *until used* | — |
 | Disoriented | No reactions; senses obscured; disadvantage on Perception | Roll layer (Perception); reactions by Advanced Encounters | Advanced Encounters (reactions) |
 | Empowered | Advantage on all tests; Investiture full at the start of each turn; ends at scene end | Roll layer; trigger at turn start (check Automated Actions first); *end of scene* | Maybe Automated Actions (check) |
-| Enhanced [Attr +X] | +X to that attribute for skill tests, talents and movement, **not** defenses or max resources | Value dialog; changes on `skills.<id>.mod.bonus` for the attribute's skills (+ movement for Speed), not `attributes.<id>.bonus` (that would raise defenses) | Automated Actions automates the Enhance action (check how, so we don't double it) |
-| Exhausted [−X] | −X on every skill test result; stacks; −1 per long rest | Changes: −1 on every skill's `mod.bonus` (system multiplies by stacks); rest hook reduces stacks | Automated Actions: "Let conditions modify rolls" may already do the penalty (test, section 2.6), and it decrements Exhaustion. Keep one, not both |
+| Enhanced [Attr +X] | +X to that attribute for skill tests, talents and movement, **not** defenses or max resources | Value dialog; change on `attributes.<id>.bonus`, which in the system feeds skills, movement and senses but not defenses or max resources (see "System facts") | Automated Actions automates the Enhance action (check how, so we don't double it) |
+| Exhausted [−X] | −X on every skill test result; stacks; −1 per long rest | Derived adjustment: −stacks on every skill's `mod.bonus`; rest hook reduces stacks (phase 2) | Automated Actions: "Let conditions modify rolls" may already do the penalty (test, section 2.6), and it decrements Exhaustion. Keep one, not both |
 | Focused | Abilities that cost focus cost 1 less | Remind first; later reduce the cost in `preUseItem` (check the system's consume path) | — |
 | Immobilized | Movement 0; can't move or be moved | Changes: movement override 0; refuse token moves (`preMoveToken`/`preUpdateToken`) with a GM override | — |
 | Prone | Slowed; melee attacks against you gain an advantage; Brace without cover; standing up: free, then −5 ft until your next turn | Link → Slowed; roll layer (melee vs target); "Stand up" button adds a −5 ft effect *until the start of your next turn* | — |
 | Restrained | Movement 0; disadvantage on all tests except escaping | Movement override 0; roll layer (the dialog shows it, so the player can drop it for an escape test) | — |
-| Slowed | Movement halved | Change on `movement.<type>.rate.bonus` = minus half the current rate, set when applied (recomputed if Speed changes) | — |
+| Slowed | Movement halved | Derived adjustment: every movement rate halved (rounded down) after everything else, so it follows Speed changes | — |
 | Stunned | Lose reactions; on your turn 2 fewer actions, no reaction | Duration only | Advanced Encounters |
 | Surprised | Lose reactions; 1 fewer action; no fast turn; removed after your next turn | Duration *after your next turn*; block fast turn | Advanced Encounters (actions) |
 | Unconscious | Movement 0, prone, drop held items, no actions or reactions; PC wakes at end of a turn or when healed | Link → Prone; movement override 0; reminder to drop held items; trigger at 0 health (with the injury roll) | — |
@@ -244,8 +261,8 @@ Each phase is a release that works on its own. Turn conditions on one at a time,
 
 | Phase | Contents | Effort |
 | --- | --- | --- |
-| 0. Checks (no code) | In the world on a `zz` scene: does a toggled status keep `changes` added to `CONFIG.statusEffects`? Does Automated Actions' Exhausted setting change totals? How does Automated Actions apply Enhanced and Empowered? Does Advanced Encounters read the movement rate after effects? Does Foundry v13 remove expired effects by itself? | 1–2 h |
-| 1. Core | Skeleton and settings; the condition table; static mechanics (Exhausted, Slowed, Immobilized, Restrained, Unconscious, Enhanced); links (Prone → Slowed, Unconscious → Prone); sources; apply dialog for values; chat lines; refresh command; API; **stances (4.5)** | 14–20 h |
+| 0. Checks (no code) | In the world on a `zz` scene: does Automated Actions' Exhausted setting change totals? How does Automated Actions apply Enhanced and Empowered? Do Advanced Encounters and the token ruler read `movement.walk.rate.value` (so Slowed and Immobilized show up there)? Does Foundry v13 remove expired effects by itself? *(The question "does a toggled status keep changes added to `CONFIG.statusEffects`" no longer matters: phase 1 doesn't use that.)* | 1–2 h |
+| 1. Core | Skeleton and settings; the condition table; static mechanics (Exhausted, Slowed, Immobilized, Restrained, Unconscious, Enhanced); links (Prone → Slowed, Unconscious → Prone); sources; apply dialog for values; chat lines; API; **stances (4.5)** | 14–20 h (code written: see "Phase 1 as built") |
 | 2. Durations | The duration kinds, expiry on turn start/end, round start, combat end, rest; chat line on expiry; at the end of a scene also recharge per-scene item uses (Recover) | 7–12 h |
 | 3. Roll layer | Advantage/disadvantage from conditions and situational effects (Dodge, Brace, Gain Advantage, Prone, Restrained, Empowered, Disoriented, Flying, Flamestance); flavor line; dialog pre-selection | 8–12 h |
 | 4. Triggers | Afflicted ticks, Determined button, Surprised fast-turn block, Empowered refill, 0 health → Unconscious + injury roll + injury condition, Steady Aim damage, Focused cost | 10–14 h |
@@ -258,9 +275,10 @@ by-hand work (Exhausted, Slowed, stances on the token, injury conditions).
 
 ### Decisions taken and open
 
-- **Changing the system's condition definitions** (layer 2) affects every condition toggled in the world from then on,
-  and the refresh command edits effects already on actors. It's reversible (turn the module off and refresh again),
-  but take a world backup first.
+- **The system's condition definitions are left alone** (changed in phase 1): mechanics are computed live
+  (derived adjustments), so nothing in `CONFIG.statusEffects` changes and no refresh command is needed. The only
+  stored mechanic is Enhanced's change on its own effect. Turning a condition off stops its derived adjustment at
+  once; an Enhanced effect created in full mode keeps its change until it is removed.
 - **Automated Actions overlaps** on Exhausted (and maybe Enhanced/Empowered). For each, pick one owner: theirs if it
   works (phase 0 tells us), ours otherwise, and switch the other off.
 - **Repo:** public. No campaign or adventure content in it, ever, and no rules text copied from the books: summaries in our own words only.
@@ -275,8 +293,8 @@ by-hand work (Exhausted, Slowed, stances on the token, injury conditions).
   `system.deflect.bonus` works, and its scene-ended and condition triggers (#654, #653) may make parts of the
   durations and triggers redundant. Read its release notes before phase 2 or anything touching deflect. The 4.0.0 roll
   refactor (#318) will likely break the roll layer: keep it in its own file and plan a rewrite then.
-- **Condition internals:** the engine relies on the system's `cond<status>` effect ids, its stack multiplication in
-  `apply()`, and adding `changes` to `CONFIG.statusEffects`. If the system implements #293 itself, each condition's
+- **Condition internals:** the engine relies on the system's `cond<status>` effect ids, `system.stacks`, the
+  `bonus` fields of derived values, and the order inside `CosmereActor.prepareDerivedData`. If the system implements #293 itself, each condition's
   setting lets us switch ours off one by one; the engine must check for system behavior before applying its own.
 - **Roll hooks are marked "TEMP: Workaround"** in the system source (the roll object passed to `preAttackRoll`).
   Their arguments may change. Keep every hook handler in its own small file with a `try/catch` that logs and skips, so a
@@ -289,6 +307,43 @@ by-hand work (Exhausted, Slowed, stances on the token, injury conditions).
   make that a click.
 - **Foundry v14** will need a compatibility pass (as for every module).
 
+
+## Phase 1 as built (0.1.0)
+
+What the code does, and where it differs from the plan above.
+
+- **Files:** `data/conditions.js` (the table), `scripts/logic/*` (pure: table checks and links, sources, values,
+  derived adjustments, stance lookup), `scripts/mechanics.js` (derived adjustments; Enhanced's change on create),
+  `scripts/conditions.js` (links, sources, chat lines, value dialog trigger), `scripts/values.js` (dialog),
+  `scripts/stances.js`, `scripts/api.js`, `scripts/settings.js`, `scripts/main.js`.
+- **Conditions automated:** Exhausted (−stacks on every skill), Slowed (half movement), Immobilized, Restrained and
+  Unconscious (movement 0), Enhanced (attribute bonus), links Prone → Slowed and Unconscious → Prone, values for
+  Afflicted and Enhanced (dialog from the HUD or sheet, or `value` in the API), several Afflicted or Enhanced
+  instances (each its own effect, with an id that still starts with `cond<status>` so the system lists it).
+- **Sources:** stored on the effect as `[{key, label}]` with keys `manual`, `effect:<id>` or `item:<id>`. After any
+  effect or item is deleted, the engine drops sources that no longer exist and ends conditions left with none. It
+  looks at what is present rather than at what was just deleted, so deleting several things at once gives the same
+  result; work is queued per actor.
+- **Who does the work:** the client of the user who created or deleted the effect (they have permission on the
+  actor). No socket, no GM needed.
+- **Every condition with a setting starts in remind-only mode**, as do stances. Remind mode posts the rule summary
+  (and "Also apply: Slowed" for links) and changes nothing.
+- **Stances:** on `cosmere-rpg.useItem`, the talent behind the used action is found by the action's `parent`
+  relationship, falling back to matching ids (`stone-stance` ↔ `stonestance`), and `actor.setMode` is called. A
+  marker effect "Stance: X" (status `ep-stance`, so it shows on the token) follows the actor's stance flag.
+  `api.endStance(actor)` switches to the End Stance talent if the actor has it, else clears the flag and disables the
+  stance effects itself.
+- **API:** `apply(actor, id, {value, stacks, source})`, `remove(actor, id, {source})`, `list(actor)`,
+  `endStance(actor)`, `syncStanceMarker(actor)`, `cleanupSources(actor)`. `source` may be an item or effect on the
+  actor (the condition then ends with it), a string, or `{key, label}`.
+- **Known gaps, for later phases:** no durations yet; Afflicted's damage, Determined and the other triggers are not
+  automated; Exhausted does not reach a skill test rolled with another attribute (see "System facts"); Restrained's
+  disadvantage and Prone's melee advantage wait for the roll layer; "Stand up" and the falling reminder are not built.
+- **To try live** (on a `zz` scene, one condition at a time, set to full): toggle Prone from the HUD (Slowed appears,
+  walking speed halves, both go when Prone is removed); Unconscious (chain of three, movement 0); Exhausted with 2
+  stacks (skill modifiers −2 on the sheet and in a roll); Enhanced Speed +1 (skills and movement go up, defenses
+  don't); Afflicted from the HUD (dialog, name shows the value); a stance action with stances set to full (stance
+  effects switch on, the marker appears on the token).
 
 ## Development
 

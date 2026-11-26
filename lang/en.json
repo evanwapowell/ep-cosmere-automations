@@ -1,0 +1,58 @@
+{
+  "ep-cosmere-automations": {
+    "settings": {
+      "enabled": {
+        "name": "Conditions engine",
+        "hint": "Master switch. Off: the module changes nothing and posts nothing."
+      },
+      "chat": {
+        "name": "Chat lines",
+        "hint": "Post a line when a condition starts or ends.",
+        "all": "Everyone",
+        "gm": "GM only",
+        "off": "Off"
+      },
+      "npcGmOnly": {
+        "name": "NPC lines to the GM only",
+        "hint": "Whisper chat lines about actors no player owns to the GM."
+      },
+      "stances": {
+        "name": "Stances",
+        "hint": "Full: using a stance's action switches the stance on (its effects apply) and shows it on the token. Remind: a chat line only."
+      },
+      "condition": {
+        "name": "Condition: {name}",
+        "alsoBy": "Also handled by"
+      },
+      "mode": {
+        "full": "Full: apply its mechanics",
+        "remind": "Remind only: a chat reminder, no changes",
+        "off": "Off"
+      }
+    },
+    "chat": {
+      "started": "{actor} is now {condition}.",
+      "startedFrom": "{actor} is now {condition} (from {source}).",
+      "ended": "{actor} is no longer {condition}.",
+      "endedBecause": "{actor} is no longer {condition} ({reason} ended).",
+      "alsoApply": "Also apply: {list}.",
+      "stanceStarted": "{actor} takes {stance}.",
+      "stanceEnded": "{actor} is no longer in a stance.",
+      "stanceRemind": "{actor} takes {stance}.",
+      "stanceRemindHint": "Its effects are not switched on automatically (stances are in remind-only mode)."
+    },
+    "dialog": {
+      "amount": "Damage",
+      "damageType": "Damage type",
+      "attribute": "Attribute",
+      "bonus": "Amount",
+      "apply": "Apply"
+    },
+    "notify": {
+      "immune": "{actor} is immune to {condition}."
+    },
+    "effect": {
+      "stance": "Stance: {stance}"
+    }
+  }
+}
