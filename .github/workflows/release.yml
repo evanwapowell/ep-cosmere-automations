@@ -1,0 +1,81 @@
+# Build module.json and module.zip and publish them as a GitHub release. Three ways to start it:
+# - push a version tag (v1.2.3), e.g. with tools/release.sh;
+# - publish a release on GitHub's website with a new tag like v0.3.0 (the files are attached to it);
+# - Actions → Release → "Run workflow": pick the branch to release and type the version (0.3.0); the tag and
+#   release are created at that branch's latest commit. (This file must also be on the default branch for the
+#   button to show; the run uses the copy on the chosen branch.)
+# Runs the tests first. The zip has the files at its root, without what .gitattributes marks export-ignore.
+# Foundry installs from https://github.com/evanwapowell/ep-cosmere-automations/releases/latest/download/module.json
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 0.3.0 (creates tag v0.3.0 at the chosen branch)'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref_name }}
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the tag
+        id: tag
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then tag="v${INPUT_VERSION#v}"; else tag="$GITHUB_REF_NAME"; fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "Not a version tag: $tag" >&2; exit 1; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test
+        run: node --test
+
+      - name: Build module.json and module.zip
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          version="${TAG#v}"
+          node - "$version" "$GITHUB_REPOSITORY" <<'JS'
+          const fs = require('fs');
+          const [version, repo] = process.argv.slice(2);
+          const manifest = JSON.parse(fs.readFileSync('module.json', 'utf8'));
+          manifest.version = version;
+          manifest.manifest = `https://github.com/${repo}/releases/latest/download/module.json`;
+          manifest.download = `https://github.com/${repo}/releases/download/v${version}/module.zip`;
+          fs.writeFileSync('module.json', JSON.stringify(manifest, null, 2) + '\n');
+          JS
+          mkdir dist
+          git archive HEAD | tar -x -C dist
+          cp module.json dist/module.json
+          (cd dist && zip -r ../module.zip .)
+          unzip -l module.zip
+
+      - name: Publish the release (or add the files to the one just published)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" module.zip module.json --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" module.zip module.json --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          fi
