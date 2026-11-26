@@ -248,6 +248,51 @@ Builds on the system's modality (see "System facts") rather than replacing it.
   Reactive Strike cost 1 less focus). Flamestance's Intimidation advantage goes through the roll layer.
 - A "repair stance effects" command adds the handbook's effect to a stance talent that lacks one.
 
+### Granted buffs: one character gives another a bonus that a test uses up (e.g. Decisive Command)
+
+Talents where one character spends an action or focus to give another a bonus, which ends when that character's next
+test uses it, or when time runs out. The model case is the Leader's **Decisive Command** (from the system's own Leader
+data, `packs/heroic-paths/leader/decisive-command.json`): 1 action and 1 focus; choose an ally you can influence
+within 20 ft; the next time they make a test before the end of their next turn, they roll your command die (a d4 to
+start) with the test and may add it to one die from that test other than the plot die. The talent carries no effects,
+so nothing happens today.
+
+Related, same die: **Confident Command** (Officer) and **Demonstrative Command** (Champion) let the leader spend 1
+focus before certain skill tests (Intimidation, Leadership, Persuasion; Athletics, Agility, Leadership) to add the
+command die to their own d20. Other Leader talents use the die in other ways.
+
+What it needs, beyond what the plan already has:
+1. **Applying an effect to another player's actor.** Phase 1 does all work on the client of the user who acted,
+   which only ever touches their own actor. A player cannot create effects on another player's character, so a
+   granted buff goes through a **GM relay**: the acting client sends a socket request (`module.ep-cosmere-automations`,
+   declared with `"socket": true` in the manifest) and the active GM's client creates the effect, after checking
+   the request (the sender owns the granting actor, the target is a valid actor, the buff is in the table). The API
+   uses the same relay. This also serves later effects one actor puts on another (Dodged on an attacker, Gain
+   Advantage tied to a target).
+2. **Combined durations ("whichever comes first"):** *until used* **or** *until the end of the target's next turn*.
+   Durations are a list of kinds, and the first one to trigger ends the effect (built in phase 2).
+3. **Adding a die, not advantage.** In the roll layer, a `preSkillRoll` / `preAttackRoll` handler on the roller's
+   client finds the buff, adds the die as a term (flavor: "Command die from Dalinar"), and marks the buff used; the
+   effect is deleted after the roll (`skillRoll` / `attackRoll`). The roller owns their own actor, so no relay is
+   needed to use it up. "Add it to one die of your choice": on a plain skill test the only non-plot die is the d20,
+   so adding the term to the total gives the same result. When the test has other dice the player could pick, the
+   chat card says so and the GM adjusts; no automation of that choice.
+4. **The command die's size lives with the leader**, since the system stores it nowhere (it is only in the talent's
+   text): an actor flag `commandDie` (default `d4`), shown and editable from the API (`setCommandDie(actor, 'd6')`)
+   and later from the sheet. The buff copies the die size when given, so a later change doesn't alter a buff already
+   handed out.
+5. **Giving it:** on `cosmere-rpg.useItem` for the Decisive Command action (matched by id like stances), take the
+   user's current target as the ally (warn when there is none or more than one; check the 20 ft distance and leave
+   "can influence" to the players), spend nothing extra (the system already charged the focus), and send the relay
+   request. In remind-only mode: a chat line "Kal has Dalinar's command die (d4) for their next test".
+6. **Self-use talents** (Confident/Demonstrative Command): a checkbox in the roll dialog via
+   `preSkillRollConfiguration` ("Spend 1 focus: add command die") for the listed skills, spending the focus when ticked.
+   Remind-only first: a chat reminder on those skill tests.
+
+Table entries (situational effects, not system statuses): `commandDie` (value: die size and giver; duration:
+`untilUsed` + `endOfNextTurn`; roll layer: add die to the next test). Build order: after the roll layer (phase 3), with
+the GM relay; rough effort 4–8 h of code, plus a live test with two player logins (to prove the relay).
+
 ### Later: Reactive Strike reminder
 
 On token movement in combat, find hostile tokens whose melee reach the mover left without having used Disengage this
@@ -267,6 +312,7 @@ Each phase is a release that works on its own. Turn conditions on one at a time,
 | 3. Roll layer | Advantage/disadvantage from conditions and situational effects (Dodge, Brace, Gain Advantage, Prone, Restrained, Empowered, Disoriented, Flying, Flamestance); flavor line; dialog pre-selection | 8–12 h |
 | 4. Triggers | Afflicted ticks, Determined button, Surprised fast-turn block, Empowered refill, 0 health → Unconscious + injury roll + injury condition, Steady Aim damage, Focused cost | 10–14 h |
 | 5. Reactive Strike reminder (4.6) | | 6–10 h |
+| 3b. Granted buffs | GM relay (socket); Decisive Command (give, use up on the next test, expire at end of next turn); command die size; Confident/Demonstrative Command reminders, then dialog checkbox | 4–8 h |
 
 The hours above are for a person writing the code. **With Claude Code writing it, the code for each phase takes one
 session or two.** What takes real time is live testing in Foundry (a GM login and a `zz` test scene), the
