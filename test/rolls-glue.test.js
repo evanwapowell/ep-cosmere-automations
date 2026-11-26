@@ -59,6 +59,64 @@ test('the skill dialog opens with the disadvantage selected, and the player can 
     assert.equal(roll.options.advantageMode, 'none');
 });
 
+/** Just enough DOM for the chat card: class lookup, prepend, before, replaceWith. */
+class El {
+    constructor(className = '') {
+        this.className = className;
+        this.children = [];
+        this.parentElement = null;
+        this.style = {};
+        this.innerHTML = '';
+    }
+    querySelector(selector) {
+        const cls = selector.split('.').at(-1);
+        for (const child of this.children) {
+            if (child.className.split(' ').includes(cls)) return child;
+            const found = child.querySelector(selector);
+            if (found) return found;
+        }
+        return null;
+    }
+    append(el) {
+        el.parentElement = this;
+        this.children.push(el);
+    }
+    prepend(el) {
+        el.parentElement = this;
+        this.children.unshift(el);
+    }
+    before(el) {
+        el.parentElement = this.parentElement;
+        this.parentElement.children.splice(this.parentElement.children.indexOf(this), 0, el);
+    }
+    replaceWith(el) {
+        el.parentElement = this.parentElement;
+        this.parentElement.children[this.parentElement.children.indexOf(this)] = el;
+    }
+}
+
+test('the card note survives the system replacing the message content after the render hook', () => {
+    const previous = globalThis.document;
+    globalThis.document = { createElement: () => new El() };
+    try {
+        const root = new El('chat-message');
+        root.append(new El('message-header'));
+        const content = new El('message-content');
+        root.append(content);
+        const message = { rolls: [{ options: { 'ep-cosmere-automations': { note: 'Disadvantage: Restrained.' } } }], getFlag: () => undefined };
+        Hooks.callAll('renderChatMessageHTML', message, root);
+        // What cosmere-rpg 3.1.2's ChatMessage.renderHTML does next: its own card replaces the content.
+        content.replaceWith(new El('message-content'));
+        const note = root.querySelector('.ep-cosmere-automations-roll-note');
+        assert.ok(note, 'note still there');
+        assert.match(note.innerHTML, /Disadvantage: Restrained\./);
+        Hooks.callAll('renderChatMessageHTML', message, root);
+        assert.equal(root.children.filter((c) => c.className === 'ep-cosmere-automations-roll-note').length, 1, 'not added twice');
+    } finally {
+        globalThis.document = previous;
+    }
+});
+
 test('a shift-click advantage and Restrained cancel out', async () => {
     reset();
     const kal = new FakeActor({ name: 'Kal' });

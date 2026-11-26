@@ -182,6 +182,9 @@ function onRenderMessage(message, html) {
     div.className = `${MODULE_ID}-roll-note`;
     div.style.cssText = 'font-size: var(--font-size-12, 12px); opacity: 0.85; margin: 2px 0 4px;';
     div.innerHTML = [...new Set(notes)].map((n) => `<p>${esc(n)}</p>`).join('');
-    const content = root.querySelector('.message-content') ?? root;
-    content.prepend(div);
+    // Beside the content, not inside it: the system's renderHTML replaces `.message-content` with its own card
+    // after this hook has run (cosmere-rpg 3.1.2, seen live 2026-11-25), which would drop a note put inside.
+    const content = root.querySelector('.message-content');
+    if (content?.parentElement) content.before(div);
+    else root.prepend(div);
 }
