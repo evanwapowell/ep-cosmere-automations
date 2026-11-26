@@ -126,6 +126,32 @@ test('a shift-click advantage and Restrained cancel out', async () => {
     assert.equal(roll.options.advantageMode, 'none');
 });
 
+test('the system\'s "Strike: X" actions: melee from the parent weapon or the adversary description', async () => {
+    reset();
+    const kal = new FakeActor({ name: 'Kal' });
+    const brute = new FakeActor({ name: 'Brute', type: 'adversary', hasPlayerOwner: false });
+    await api.apply(brute, 'prone');
+    await flush();
+    target(brute);
+    // A character's attack: the weapon's strike action, embedded in the weapon (no attack data of its own).
+    const weapon = { name: 'Sidesword', system: { attack: { type: 'melee' } } };
+    const strike = { id: 'S1', uuid: `${kal.uuid}.Item.W1.Item.ephdoc0000000000`, name: 'Strike: Sidesword', type: 'action', actor: kal, parent: weapon, system: { skill: 'lwp' } };
+    await rollAttack(kal, strike);
+    assert.equal(globalThis.__dialogPreset, 'advantage');
+
+    // An adversary's strike: a plain action whose description gives Reach or Range.
+    reset();
+    target(brute);
+    const mace = { id: 'S2', uuid: `${kal.uuid}.Item.S2`, name: 'Strike: Mace', type: 'action', actor: kal, parent: kal, system: { skill: 'lwp', description: { value: '<p>Attack +2; Reach 5 ft.; Targets one</p>' } } };
+    await rollAttack(kal, mace);
+    assert.equal(globalThis.__dialogPreset, 'advantage');
+    reset();
+    target(brute);
+    const bow = { ...mace, id: 'S3', uuid: `${kal.uuid}.Item.S3`, system: { skill: 'lwp', description: { value: 'Attack +2; Range 80/120 ft.' } } };
+    await rollAttack(kal, bow);
+    assert.notEqual(globalThis.__dialogPreset, 'advantage');
+});
+
 test('melee against a Prone target: the attack dialog starts with an advantage; ranged does not', async () => {
     reset();
     const kal = new FakeActor({ name: 'Kal' });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { CONDITIONS, CONDITIONS_BY_ID } from '../data/conditions.js';
 import { SITUATIONAL, SITUATIONAL_BY_ID } from '../data/situational.js';
-import { collectModifiers, describeModifiers, netMode, ruleError, ruleMatchesTest } from '../scripts/logic/rolls.js';
+import { attackTypeOf, collectModifiers, describeModifiers, netMode, ruleError, ruleMatchesTest } from '../scripts/logic/rolls.js';
 import { validateSituational } from '../scripts/logic/table.js';
 
 const full = () => 'full';
@@ -27,6 +27,17 @@ test('situational validation catches bad entries', () => {
     for (const fragment of ['needs exactly one of action or stance', 'no roll rules', 'vsTarget needs needsTarget', 'action "a" used twice', 'unknown "who"', 'unknown endsWhen']) {
         assert.ok(errors.includes(fragment), `expected "${fragment}" in:\n${errors}`);
     }
+});
+
+test('attackTypeOf: the item, its parent weapon, or an adversary description', () => {
+    assert.equal(attackTypeOf({ system: { attack: { type: 'ranged' } } }), 'ranged');
+    assert.equal(attackTypeOf({ system: {}, parent: { system: { attack: { type: 'melee' } } } }), 'melee');
+    assert.equal(attackTypeOf({ system: { description: { value: '<p>Attack +4; Reach 5 ft.; Targets one</p>' } } }), 'melee');
+    assert.equal(attackTypeOf({ system: { description: { value: 'Attack +2; Range 80/120 ft.' } } }), 'ranged');
+    assert.equal(attackTypeOf({ system: { description: { value: 'Reach 5 ft. or Range 20/60 ft.' } } }), null, 'both: unknown');
+    assert.equal(attackTypeOf({ system: { description: { value: 'Outreach program' } } }), null, 'whole words only');
+    assert.equal(attackTypeOf({ system: {}, parent: { system: {} } }), null);
+    assert.equal(attackTypeOf(null), null);
 });
 
 test('ruleError and ruleMatchesTest', () => {

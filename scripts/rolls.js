@@ -16,7 +16,7 @@ import { CONDITIONS_BY_ID } from '../data/conditions.js';
 import { SITUATIONAL_BY_ID } from '../data/situational.js';
 import { MODES, MODULE_ID, SYSTEM_ID } from './constants.js';
 import { activeConditions } from './mechanics.js';
-import { collectModifiers, describeModifiers, netMode } from './logic/rolls.js';
+import { attackTypeOf, collectModifiers, describeModifiers, netMode } from './logic/rolls.js';
 import { consumeEffect } from './relay.js';
 import { conditionMode, featureMode, SETTINGS, weakerMode } from './settings.js';
 import { activateGrantButton, endOn, singleTarget, situationalEffects } from './situational.js';
@@ -92,7 +92,7 @@ function onPreAttackConfiguration(options, item) {
     const mods = modifiersFor(actor, {
         context: 'Attack',
         skill: options.skillTest.skill ?? item.system?.skillTest?.resolvedSkill ?? item.system?.skillTest?.skill ?? null,
-        attackType: item.system?.attack?.type ?? null,
+        attackType: attackTypeOf(item),
     });
     pendingAttacks.set(item.uuid, { mods, at: Date.now(), submitted: false });
     if (!mods.length) return;
@@ -120,7 +120,7 @@ function onPreRoll(context, roll, source, config) {
         modifiersFor(actor, {
             context,
             skill: config?.data?.skill?.id ?? null,
-            attackType: context === 'Attack' ? (source?.system?.attack?.type ?? null) : null,
+            attackType: context === 'Attack' ? attackTypeOf(source) : null,
         });
     if (!mods.length) return;
 

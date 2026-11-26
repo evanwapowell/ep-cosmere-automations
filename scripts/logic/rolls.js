@@ -29,6 +29,27 @@ export function ruleError(rule) {
 }
 
 /**
+ * Melee or ranged, for an attack rolled from an item. In cosmere-rpg 3.1.2 (seen live 2026-11-25) the item the
+ * attack hooks get is often not the weapon:
+ * - a character's attack is the weapon's "Strike: X" action, an item embedded in the weapon; the type is on the
+ *   parent weapon (`system.attack.type`);
+ * - an adversary's "Strike: X" is a plain action with no attack data; its description says "Reach 5 ft." (melee)
+ *   or "Range 80/120 ft." (ranged).
+ * Unknown (or both words) → null, and melee/ranged rules don't apply.
+ * @param {{system?: {attack?: {type?: string}, description?: {value?: string}}, parent?: unknown}} item
+ * @returns {'melee' | 'ranged' | null}
+ */
+export function attackTypeOf(item) {
+    const own = item?.system?.attack?.type ?? item?.parent?.system?.attack?.type;
+    if (own === 'melee' || own === 'ranged') return own;
+    const text = String(item?.system?.description?.value ?? '').replace(/<[^>]*>/g, ' ');
+    const reach = /\breach\b/i.test(text);
+    const range = /\brange\b/i.test(text);
+    if (reach === range) return null;
+    return reach ? 'melee' : 'ranged';
+}
+
+/**
  * Whether a rule's `tests` covers a test.
  * @param {object} rule
  * @param {{context: string, skill?: string | null, attackType?: string | null}} test
