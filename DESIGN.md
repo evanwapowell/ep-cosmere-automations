@@ -420,7 +420,8 @@ What the code does, and where it differs from the plan above.
   `endStance(actor)`, `syncStanceMarker(actor)`, `cleanupSources(actor)`. `source` may be an item or effect on the
   actor (the condition then ends with it), a string, or `{key, label}`.
 - **Known gaps, for later phases:** no durations yet; Afflicted's damage, Determined and the other triggers are not
-  automated; Exhausted does not reach a skill test rolled with another attribute (see "System facts"); Restrained's
+  automated (Afflicted's damage: done in 0.3.2, see "After the live pass"); Exhausted does not reach a skill test
+  rolled with another attribute (see "System facts"; done in 0.3.2); Restrained's
   disadvantage and Prone's melee advantage wait for the roll layer; "Stand up" and the falling reminder are not built.
 - **To try live** (on a `zz` scene, one condition at a time, set to full): toggle Prone from the HUD (Slowed appears,
   walking speed halves, both go when Prone is removed); Unconscious (chain of three, movement 0); Exhausted with 2
@@ -457,7 +458,7 @@ What the code does, and where it differs from the plan above.
   `use(effect)` (ends an "until used" effect; the roll layer and triggers will call it), and `list()` gains
   `duration` and `lasts` (readable text).
 - **Stunned and Surprised** now have settings (their action loss stays with Advanced Encounters).
-- **Not built:** Surprised's "no fast turn" (phase 4 trigger), Foundry's own effect durations are not used, a
+- **Not built:** Surprised's "no fast turn" (built in 0.3.2), Foundry's own effect durations are not used, a
   per-day clock (days only advance through the API).
 - **To try live** (durations set to full, Advanced Encounters on): Stunned applied during Kal's turn with "until the
   end of its next turn" survives that turn and ends at the end of Kal's next one; Restrained with "until the start of
@@ -496,10 +497,9 @@ What the code does, and where it differs from the plan above.
 - **API:** `mark(actor, 'dodging' | 'bracing' | 'advantage', {target, duration})`, `marks(actor)`,
   `modifiers(actor, {target, context, skill, attackType})` (preview without rolling).
 - **Not built / known gaps:** Gain Advantage's "a different skill from the test that gained it" is shown in the
-  effect's text, not enforced; Blind/Hidden/Invisible are left to Foundry's vision (no roll rule); an advantage
-  is always put on the d20 (the rules also allow the plot die: the player can move it in the dialog); a skill test
-  rolled with another attribute still skips Exhausted (a system behavior); the `renderChatMessageHTML` note and the
-  token-controls button are the parts most likely to need a fix in a live world.
+  effect's text, not enforced; an advantage is always put on the d20 (the rules also allow the plot die: the player
+  can move it in the dialog). (Blind/Hidden/Invisible roll rules and Exhausted on another attribute: added in 0.3.2,
+  see "After the live pass".)
 - **To try live** (rolls and action effects set to full; Restrained, Prone set to full): a Restrained character's
   Athletics test opens with disadvantage selected; a sword attack on a Prone target opens with advantage, a bow
   attack doesn't; a player's attack on an NPC who used Dodge rolls with disadvantage and removes Dodging (GM logged
@@ -594,6 +594,43 @@ null, `unsetFlag` on a mode throws, single-status effects need a kept id); tests
 
 **Still open:** checks 11 (two GMs: one chat line per event) and 18 (player attack using up an NPC's Dodging
 through the GM relay) need a second login.
+
+## After the live pass (0.3.2)
+
+The four rules the GM still had to remember after the pass are now automated (commit c7c439e, release v0.3.2).
+Each follows its condition's setting (full / remind / off).
+
+- **Afflicted's damage.** At the end of each of the afflicted actor's turns (the duration layer's turn-end event,
+  on the active GM), each instance deals its damage through the system's `applyDamage`, one by one (deflect and
+  immunities as the system does them; the system posts its damage card, with undo), with a chat line naming the
+  source. This runs before effects lasting "until the end of its turn" end. Remind: a reminder with the amount.
+- **Surprised: no fast turn.** On the active GM, whenever a Surprised actor's combatant is on a fast turn (when
+  Surprised starts, when a combatant is added, when anyone switches it), it goes back to slow with a chat line. A
+  boss's extra fast turn is a virtual copy the system makes (not a combatant), so a Surprised boss gets a reminder
+  to skip it. Remind: a reminder instead of the switch.
+- **Exhausted on another attribute.** The system builds the modifier from rank + attribute only (dropping every
+  skill bonus) when `rollSkill` gets an `attribute` or another attribute is picked in the roll dialog. The Exhausted
+  penalty is then added back as its own term, once per roll (the pre-roll hook for the option; the dialog wrapper
+  compares the modifier term before and after).
+- **Senseblind, Hidden, Invisible** (the system's statuses `blind`, `hidden`, `invisible`, which it marks as
+  non-conditions). The handbook's targeting rule (ch. 10): a character who can't sense its target gains a
+  disadvantage on attacks and other tests that affect the target's body, and those attacks can't graze (ch. 3: with
+  your primary sense obscured you still sense things within your senses range). So:
+  - Hidden / Invisible on the target: attacks against it gain a disadvantage. They are relative (someone may have
+    spotted the hidden character), so the dialog's pre-selection is the place to drop it.
+  - Senseblind on the attacker: a disadvantage only when the target's token is farther than the attacker's senses
+    range (`system.senses.range`; never for senses with `obscuredAffected: false`). New rule option `beyondSenses`.
+  - "Can't graze" is in the summaries, not enforced. Other tests that affect the body are left to the GM.
+  - They have settings now (remind by default).
+
+**Live check of 0.3.2 (2026-11-26, same world, throwaway `zz` scene and actors, deleted afterwards):**
+Afflicted [3 Energy] took Kal 12 → 9 at the end of his turn, not at its start, with our line and the system's
+damage card. Surprised moved Kal's fast combatant to slow, and the system's own speed toggle back to fast was
+reverted at once. Exhausted 2 on an Athletics test with Intellect: `1d20 + 2 - 2` both fast-forwarded and chosen in
+the dialog (total d20 + 0). A sword attack opened with disadvantage on a Hidden or Invisible target; a Senseblind
+attacker (senses range 10 ft) had none at 5 ft and a disadvantage at 20 ft. Afterwards every mode setting of this
+module was set to full in Stonewalkers, and Cosmere Automated Actions' "Let conditions modify rolls" turned off (its
+"decrementExhaustion" stays on; ours defers to it).
 
 ## Development
 
