@@ -45,6 +45,71 @@ function setup() {
     return { kal, shallan, brute, combat };
 }
 
+test('Afflicted: each instance deals its damage at the end of each of its turns; remind mode only reminds', async () => {
+    const { kal, shallan, combat } = setup();
+    await api.apply(kal, 'afflicted', { value: { type: 'keen', amount: 3 } });
+    await api.apply(kal, 'afflicted', { value: { type: 'impact', amount: 1 } });
+    await flush();
+    await combat.start();
+    await combat.startTurn(kal);
+    assert.equal(kal.damageCalls, undefined, 'not at the start of its turn');
+    await combat.endTurn();
+    assert.deepEqual(kal.damageCalls, [[{ amount: 3, type: 'keen' }], [{ amount: 1, type: 'impact' }]], 'one by one');
+    await combat.startTurn(shallan);
+    await combat.endTurn();
+    assert.equal(kal.damageCalls.length, 2, "not on someone else's turn");
+
+    env.settings.set('condition.afflicted', 'remind');
+    try {
+        const before = env.chat.length;
+        await combat.nextRound();
+        await combat.startTurn(kal);
+        await combat.endTurn();
+        assert.equal(kal.damageCalls.length, 2, 'remind: no damage');
+        assert.ok(env.chat.slice(before).some((m) => m.content.includes('deals its damage now')));
+    } finally {
+        env.settings.set('condition.afflicted', 'full');
+    }
+});
+
+test('Surprised: its fast turn becomes slow, also when set back to fast; remind mode and bosses only remind', async () => {
+    const { kal, combat } = setup();
+    game.combats = [combat];
+    try {
+        const combatant = combat.combatantOf(kal);
+        assert.equal(combatant.turnSpeed, 'fast');
+        await api.apply(kal, 'surprised');
+        await flush();
+        assert.equal(combatant.turnSpeed, 'slow');
+        await combatant.setFlag('cosmere-rpg', 'turnSpeed', 'fast');
+        await flush();
+        assert.equal(combatant.turnSpeed, 'slow', 'switched back by the GM');
+
+        env.settings.set('condition.surprised', 'remind');
+        const shallan = new FakeActor({ name: 'Shallan' });
+        const other = new FakeCombat([{ actor: shallan, fast: true }]);
+        game.combats = [other];
+        const before = env.chat.length;
+        await api.apply(shallan, 'surprised');
+        await flush();
+        assert.equal(other.combatantOf(shallan).turnSpeed, 'fast', 'remind: unchanged');
+        assert.ok(env.chat.slice(before).some((m) => m.content.includes('cannot take a fast turn')));
+
+        env.settings.set('condition.surprised', 'full');
+        const boss = new FakeActor({ name: 'Boss', type: 'adversary', hasPlayerOwner: false });
+        const bossFight = new FakeCombat([{ actor: boss, isBoss: true }]);
+        game.combats = [bossFight];
+        const beforeBoss = env.chat.length;
+        await api.apply(boss, 'surprised');
+        await flush();
+        assert.equal(bossFight.combatantOf(boss).turnSpeed, 'slow');
+        assert.ok(env.chat.slice(beforeBoss).some((m) => /Skip its fast turn/.test(m.content)), 'boss: a reminder');
+    } finally {
+        env.settings.set('condition.surprised', 'full');
+        game.combats = undefined;
+    }
+});
+
 test('Stunned until the end of its next turn, applied during its own turn', async () => {
     const { kal, shallan, combat } = setup();
     await combat.start();

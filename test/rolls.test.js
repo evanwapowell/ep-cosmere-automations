@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { CONDITIONS, CONDITIONS_BY_ID } from '../data/conditions.js';
 import { SITUATIONAL, SITUATIONAL_BY_ID } from '../data/situational.js';
-import { attackTypeOf, collectModifiers, describeModifiers, netMode, ruleError, ruleMatchesTest } from '../scripts/logic/rolls.js';
+import { attackTypeOf, beyondSenses, collectModifiers, describeModifiers, netMode, ruleError, ruleMatchesTest } from '../scripts/logic/rolls.js';
 import { validateSituational } from '../scripts/logic/table.js';
 
 const full = () => 'full';
@@ -27,6 +27,18 @@ test('situational validation catches bad entries', () => {
     for (const fragment of ['needs exactly one of action or stance', 'no roll rules', 'vsTarget needs needsTarget', 'action "a" used twice', 'unknown "who"', 'unknown endsWhen']) {
         assert.ok(errors.includes(fragment), `expected "${fragment}" in:\n${errors}`);
     }
+});
+
+test('beyondSenses: only a measured target farther than the senses range; senses not affected by obscurement never', () => {
+    assert.equal(beyondSenses({ distance: 20, sensesRange: 10 }), true);
+    assert.equal(beyondSenses({ distance: 10, sensesRange: 10 }), false, 'at the edge: within');
+    assert.equal(beyondSenses({ distance: null, sensesRange: 10 }), null);
+    assert.equal(beyondSenses({ distance: 20, sensesRange: 10, obscuredAffected: false }), false);
+    const blind = { who: 'self', mode: 'disadvantage', tests: 'attack', beyondSenses: true };
+    assert.equal(ruleMatchesTest(blind, { context: 'Attack', beyondSenses: true }), true);
+    assert.equal(ruleMatchesTest(blind, { context: 'Attack', beyondSenses: null }), false, 'not measured: skipped');
+    assert.equal(ruleMatchesTest(blind, { context: 'Skill', beyondSenses: true }), false);
+    assert.match(ruleError({ ...blind, who: 'target' }), /beyondSenses/);
 });
 
 test('attackTypeOf: the item, its parent weapon, or an adversary description', () => {

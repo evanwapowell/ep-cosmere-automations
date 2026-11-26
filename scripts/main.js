@@ -14,6 +14,7 @@ import { registerRollHooks } from './rolls.js';
 import { registerSituationalHooks } from './situational.js';
 import { registerSettings } from './settings.js';
 import { registerStanceHooks } from './stances.js';
+import { registerTriggerHooks } from './triggers.js';
 import { log, warn } from './util.js';
 
 Hooks.once('init', () => {
@@ -36,6 +37,7 @@ Hooks.once('init', () => {
     registerConditionHooks();
     registerStanceHooks();
     registerDurationHooks();
+    registerTriggerHooks();
     registerSituationalHooks();
     registerRollHooks();
     registerRelay();

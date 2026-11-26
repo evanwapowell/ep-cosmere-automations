@@ -16,6 +16,7 @@ import { isEndStance } from './logic/stances.js';
 import { conditionIdOf } from './logic/table.js';
 import { allActors, conditionMode, featureMode, otherModuleReducesExhaustion, setting, SETTINGS, stanceMode } from './settings.js';
 import { endStance } from './stances.js';
+import { afflictedTurnEnd } from './triggers.js';
 import { actorName, esc, isActiveGM, safe, serial, t } from './util.js';
 
 export function registerDurationHooks() {
@@ -184,7 +185,12 @@ async function onTurnChange(combat, prior, current) {
         events.push({ type: 'roundStart', combatId: combat.id, round: current.round });
     }
     if (current?.combatantId && turnChanged) events.push(turnEvent('turnStart', combat, current.combatantId, current.round));
-    for (const event of events) if (event) await dispatch(actors, event);
+    for (const event of events) {
+        if (!event) continue;
+        // Afflicted deals its damage at the end of the turn, before effects lasting until then end.
+        if (event.type === 'turnEnd') await afflictedTurnEnd(actors.find((a) => a.uuid === event.actorUuid));
+        await dispatch(actors, event);
+    }
 }
 
 async function onDeleteCombat(combat) {

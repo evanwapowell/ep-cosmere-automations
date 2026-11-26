@@ -15,8 +15,8 @@
 import { CONDITIONS_BY_ID } from '../data/conditions.js';
 import { SITUATIONAL_BY_ID } from '../data/situational.js';
 import { MODES, MODULE_ID, SYSTEM_ID } from './constants.js';
-import { activeConditions } from './mechanics.js';
-import { attackTypeOf, collectModifiers, describeModifiers, netMode } from './logic/rolls.js';
+import { activeConditions, skillPenalty } from './mechanics.js';
+import { attackTypeOf, beyondSenses, collectModifiers, describeModifiers, netMode } from './logic/rolls.js';
 import { consumeEffect } from './relay.js';
 import { conditionMode, featureMode, SETTINGS, weakerMode } from './settings.js';
 import { activateGrantButton, endOn, singleTarget, situationalEffects } from './situational.js';
@@ -30,6 +30,7 @@ const pendingAttacks = new Map();
 
 export function registerRollHooks() {
     for (const context of CONTEXTS) {
+        Hooks.on(`${SYSTEM_ID}.pre${context}Roll`, safe(`pre${context}Roll (exhaustion)`, (roll, source, config) => onPreRollExhaustion(context, roll, source, config)));
         Hooks.on(`${SYSTEM_ID}.pre${context}Roll`, safe(`pre${context}Roll`, (roll, source, config) => onPreRoll(context, roll, source, config)));
         Hooks.on(`${SYSTEM_ID}.${context.toLowerCase()}Roll`, safe(`${context.toLowerCase()}Roll`, (roll) => onRolled(roll)));
     }
@@ -77,10 +78,34 @@ function actorOf(context, source, config) {
 }
 
 function modifiersFor(actor, test) {
+    const roller = sideOf(actor);
+    const targetActor = singleTarget(actor);
+    if (roller?.conditions.includes('blind') && targetActor) test = { ...test, beyondSenses: targetBeyondSenses(actor) };
     return collectModifiers(
-        { roller: sideOf(actor), target: sideOf(singleTarget(actor)), test },
+        { roller, target: sideOf(targetActor), test },
         { conditions: CONDITIONS_BY_ID, situational: SITUATIONAL_BY_ID, modeOf },
     );
+}
+
+/** The roller's senses range in the scene's units (the system's derived value: override or derived, plus bonus). */
+function sensesRange(actor) {
+    const range = actor?.system?.senses?.range;
+    if (!range) return null;
+    if (Number.isFinite(range.value)) return range.value;
+    const base = range.useOverride ? range.override : range.derived;
+    return Number.isFinite(base) ? base + (Number(range.bonus) || 0) : null;
+}
+
+/** Whether the user's single targeted token is beyond the roller's senses range (null: can't tell). */
+function targetBeyondSenses(actor) {
+    const targets = [...(game.user?.targets ?? [])];
+    const from = actor?.getActiveTokens?.()?.[0];
+    const to = targets.length === 1 ? targets[0] : null;
+    let distance = null;
+    if (from?.center && to?.center && globalThis.canvas?.grid?.measurePath) {
+        distance = canvas.grid.measurePath([from.center, to.center]).distance;
+    }
+    return beyondSenses({ distance, sensesRange: sensesRange(actor), obscuredAffected: actor?.system?.senses?.obscuredAffected });
 }
 
 /* --- Hooks --- */
@@ -135,9 +160,41 @@ function onPreRoll(context, roll, source, config) {
         }
     }
     roll.options[MODULE_ID] = {
+        ...roll.options[MODULE_ID],
         note: describeModifiers(mods),
         consume: mods.filter((m) => m.active && m.consume).map((m) => m.consume),
     };
+}
+
+/* --- Exhausted on a test rolled with another attribute --- */
+
+/**
+ * The system builds a skill test's modifier from the skill's `mod.value` (which carries the Exhausted penalty),
+ * except when the test uses another attribute: `actor.rollSkill(id, {attribute})` and an attribute changed in the
+ * roll dialog both rebuild it from rank + attribute only, dropping every skill bonus. Exhausted is a penalty on
+ * every skill test, so it is added back as its own term then (once per roll).
+ */
+function onPreRollExhaustion(context, roll, source, config) {
+    const actor = actorOf(context, source, config);
+    if (!actor) return;
+    roll.options[MODULE_ID] = { ...roll.options[MODULE_ID], actorUuid: actor.uuid };
+    // rollSkill with an explicit attribute leaves the skill's bonus out from the start.
+    if (context === 'Skill' && config?.attribute) addExhaustionTerm(roll, actor);
+}
+
+function addExhaustionTerm(roll, actor) {
+    const state = (roll.options[MODULE_ID] ??= {});
+    if (state.exhaustion) return;
+    const penalty = skillPenalty(actor);
+    if (!penalty || !Array.isArray(roll.terms) || typeof Roll !== 'function') return;
+    roll.terms = roll.terms.concat(new Roll(`0 - ${penalty}`).terms.slice(1));
+    if (typeof roll.resetFormula === 'function') roll.resetFormula();
+    state.exhaustion = penalty;
+}
+
+function rollActor(roll) {
+    const uuid = roll?.options?.[MODULE_ID]?.actorUuid;
+    return uuid ? (globalThis.fromUuidSync?.(uuid) ?? null) : null;
 }
 
 async function onRolled(roll) {
@@ -156,7 +213,7 @@ function wrapRollDialog() {
         warn('D20Roll.configureDialog not found; the roll dialog will not show condition advantages');
         return;
     }
-    D20Roll.prototype.configureDialog = function (data, ...rest) {
+    D20Roll.prototype.configureDialog = async function (data, ...rest) {
         try {
             if (data?.skillTest && data.skillTest.advantageMode == null && this.options?.advantageMode) {
                 data.skillTest.advantageMode = this.options.advantageMode;
@@ -164,7 +221,18 @@ function wrapRollDialog() {
         } catch (err) {
             console.error(`${MODULE_ID} | roll dialog preset failed`, err);
         }
-        return original.call(this, data, ...rest);
+        const modifierTerm = this.terms?.[2];
+        const result = await original.call(this, data, ...rest);
+        try {
+            // Another attribute picked in the dialog: the system replaced the modifier term without skill bonuses.
+            if (result && Array.isArray(this.terms) && this.terms[2] !== modifierTerm) {
+                const actor = rollActor(this);
+                if (actor) addExhaustionTerm(this, actor);
+            }
+        } catch (err) {
+            console.error(`${MODULE_ID} | keeping Exhausted on another attribute failed`, err);
+        }
+        return result;
     };
     wrapped = true;
 }

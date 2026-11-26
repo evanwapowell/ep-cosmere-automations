@@ -100,26 +100,42 @@ const actorsByUuid = new Map();
  * player's choice (`globalThis.__dialogChoice`, else whatever it started with).
  */
 export class D20Roll {
-    constructor(options = {}) {
+    constructor(options = {}, mod = 2) {
         this.options = { ...options };
+        // Like the system's d20 roll: [d20, '+', modifier, ...extra terms].
+        this.terms = [{ faces: 20 }, { operator: '+' }, { number: mod }];
         this.configureModifiers();
     }
     configureModifiers() {
         const mode = this.options.advantageMode;
         this.formula = mode === 'advantage' ? '2d20kh' : mode === 'disadvantage' ? '2d20kl' : '1d20';
     }
+    resetFormula() {
+        this.extra = this.terms.slice(3).map((t) => t.operator ?? String(t.number)).join(' ');
+    }
     async configureDialog(data) {
         globalThis.__dialogPreset = data?.skillTest?.advantageMode;
         this.options.advantageMode = globalThis.__dialogChoice ?? data?.skillTest?.advantageMode ?? 'none';
+        // Another attribute picked in the dialog: the system replaces the modifier term (rank + attribute only).
+        if (globalThis.__dialogAttribute) this.terms[2] = { number: 1 };
         this.configureModifiers();
         return this;
     }
 }
 
+/** Foundry's Roll, reduced to parsing "0 - 2" into terms. */
+export class Roll {
+    constructor(formula) {
+        this.terms = String(formula)
+            .split(' ')
+            .map((part) => (/^[-+*/]$/.test(part) ? { operator: part } : { number: Number(part) }));
+    }
+}
+
 /** The system's skill test flow: pre-roll hook, dialog unless fast-forwarded, post-roll hook. */
-export async function rollSkill(actor, skill, { fastForward = false, advantageMode = 'none' } = {}) {
+export async function rollSkill(actor, skill, { fastForward = false, advantageMode = 'none', attribute } = {}) {
     const roll = new D20Roll({ advantageMode });
-    const config = { data: { context: 'Skill', skill: { id: skill }, source: actor } };
+    const config = { data: { context: 'Skill', skill: { id: skill }, source: actor }, ...(attribute ? { attribute } : {}) };
     Hooks.call('cosmere-rpg.preSkillRoll', roll, actor, config);
     if (!fastForward) await roll.configureDialog({ skillTest: { data: config.data, parts: [] } });
     Hooks.callAll('cosmere-rpg.skillRoll', roll, actor, config);
@@ -263,6 +279,10 @@ export class FakeActor extends Actor {
         if (parent) delete parent[parts.at(-1)];
         Hooks.callAll('updateActor', this, { flags: { [scope]: { [`-=${key}`]: null } } }, {}, globalThis.game.user.id);
     }
+    /** The system's applyDamage, reduced to recording the instances. */
+    async applyDamage(instances) {
+        this.damageCalls = [...(this.damageCalls ?? []), instances];
+    }
     async setMode(modality, mode) {
         this.modeCalls = [...(this.modeCalls ?? []), [modality, mode]];
         await this.setFlag('cosmere-rpg', `mode.${modality}`, mode);
@@ -338,10 +358,23 @@ export class FakeCombat {
         this.round = 0;
         this.turn = null;
         this.combatants = new Collection();
-        for (const { actor, fast = false } of entries) {
+        for (const { actor, fast = false, isBoss = false } of entries) {
             const id = randomID();
             const flags = { 'cosmere-rpg': { turnSpeed: fast ? 'fast' : 'slow' } };
-            this.combatants.set(id, { id, actor, turnSpeed: fast ? 'fast' : 'slow', getFlag: (sc, k) => getProperty(flags, `${sc}.${k}`) });
+            const combatant = {
+                id,
+                actor,
+                isBoss,
+                get turnSpeed() {
+                    return getProperty(flags, 'cosmere-rpg.turnSpeed') ?? 'slow';
+                },
+                getFlag: (sc, k) => getProperty(flags, `${sc}.${k}`),
+                async setFlag(sc, k, v) {
+                    setProperty(flags, `${sc}.${k}`, v);
+                    Hooks.callAll('updateCombatant', combatant, { flags: { [sc]: { [k]: v } } }, {}, globalThis.game.user.id);
+                },
+            };
+            this.combatants.set(id, combatant);
         }
         this.turns = this.combatants.contents;
         this.previous = null;
@@ -385,7 +418,7 @@ export class FakeCombat {
 
 const STATUS_IDS = [
     'afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious', 'stunned',
-    'surprised', 'empowered', 'disoriented', 'flying',
+    'surprised', 'empowered', 'disoriented', 'flying', 'blind', 'hidden', 'invisible',
 ];
 
 /** Install the globals. Returns handles the tests use. */
@@ -399,6 +432,7 @@ export function installFakeFoundry({ settings: overrides = {} } = {}) {
     Object.assign(globalThis, {
         Hooks,
         Actor,
+        Roll,
         fromUuidSync: (uuid) => actorsByUuid.get(uuid) ?? null,
         CONFIG: {
             Dice: { rolls: [D20Roll] },

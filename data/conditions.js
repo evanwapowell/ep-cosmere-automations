@@ -38,6 +38,8 @@ export const MECHANICS = Object.freeze({
  *          'target' the roller's (single) target has it.
  * - mode:  'advantage' | 'disadvantage'
  * - tests: 'all' | 'attack' | 'melee' | 'ranged' | { skills: [skill ids] }
+ * - beyondSenses: (who: 'self' only) only when the target's token is farther than the roller's senses range
+ *          (Senseblind: within that range it still senses things); skipped when that can't be measured.
  * Situational effects (data/situational.js) add:
  * - vsTarget: only on a test against the target stored in the effect's value;
  * - consume:  the effect is used up by the test.
@@ -64,11 +66,13 @@ export const CONDITIONS = Object.freeze([
     },
     {
         id: 'blind',
-        name: 'Blind',
-        summary: 'Cannot see; tests that rely on sight, or against something it cannot sense, often gain a disadvantage.',
+        name: 'Senseblind',
+        summary:
+            'Its primary sense is obscured: it senses things only within its senses range. Its attacks against a target beyond that range gain a disadvantage and cannot graze.',
         mechanics: [],
         links: [],
-        phase: null,
+        rolls: [{ who: 'self', mode: 'disadvantage', tests: 'attack', beyondSenses: true }],
+        phase: 3,
         handledBy: 'Foundry core (vision)',
     },
     {
@@ -175,10 +179,12 @@ export const CONDITIONS = Object.freeze([
     {
         id: 'hidden',
         name: 'Hidden',
-        summary: 'Others cannot sense it; attacks against it are harder and its attacks are easier.',
+        summary:
+            'Others cannot sense it until they find it. Attacks against it from someone who cannot sense it gain a disadvantage and cannot graze (drop it in the roll dialog for someone who has spotted it).',
         mechanics: [],
         links: [],
-        phase: null,
+        rolls: [{ who: 'target', mode: 'disadvantage', tests: 'attack' }],
+        phase: 3,
         handledBy: 'Foundry core (detection)',
     },
     {
@@ -192,10 +198,12 @@ export const CONDITIONS = Object.freeze([
     {
         id: 'invisible',
         name: 'Invisible',
-        summary: 'Cannot be seen; tests against it often gain a disadvantage.',
+        summary:
+            'Cannot be seen. Attacks against it from someone who cannot sense it gain a disadvantage and cannot graze (drop it in the roll dialog for someone who senses it another way).',
         mechanics: [],
         links: [],
-        phase: null,
+        rolls: [{ who: 'target', mode: 'disadvantage', tests: 'attack' }],
+        phase: 3,
         handledBy: 'Foundry core (detection)',
     },
     {

@@ -25,7 +25,21 @@ export function ruleError(rule) {
         (tests && typeof tests === 'object' && Array.isArray(tests.skills) && tests.skills.length > 0);
     if (!okTests) return `unknown tests ${JSON.stringify(tests)}`;
     if (rule.vsTarget && rule.who !== 'self') return 'vsTarget only makes sense for who: self';
+    if (rule.beyondSenses && rule.who !== 'self') return 'beyondSenses only makes sense for who: self';
     return null;
+}
+
+/**
+ * Whether a target is beyond a roller's senses range (for Senseblind).
+ * @param {{distance: number | null, sensesRange: number | null, obscuredAffected?: boolean}} input
+ *   distance: between the two tokens, in the scene's units (feet); sensesRange: the roller's, same units;
+ *   obscuredAffected: false for a character whose senses aren't affected by obscurement
+ * @returns {boolean | null} null when it can't be told
+ */
+export function beyondSenses({ distance, sensesRange, obscuredAffected = true }) {
+    if (obscuredAffected === false) return false;
+    if (!Number.isFinite(distance) || !Number.isFinite(sensesRange)) return null;
+    return distance > sensesRange;
 }
 
 /**
@@ -52,10 +66,13 @@ export function attackTypeOf(item) {
 /**
  * Whether a rule's `tests` covers a test.
  * @param {object} rule
- * @param {{context: string, skill?: string | null, attackType?: string | null}} test
- *   context: the system's roll context ('Skill', 'Item', 'Attack')
+ * @param {{context: string, skill?: string | null, attackType?: string | null, beyondSenses?: boolean | null}} test
+ *   context: the system's roll context ('Skill', 'Item', 'Attack');
+ *   beyondSenses: the target is farther than the roller's senses range (null: not measured)
  */
 export function ruleMatchesTest(rule, test) {
+    // Senseblind: only against a target measured to be beyond the roller's senses range.
+    if (rule.beyondSenses && test.beyondSenses !== true) return false;
     const tests = rule.tests;
     const isAttack = test.context === 'Attack';
     if (tests === 'all') return true;

@@ -23,14 +23,15 @@ test('phase 1 automates the conditions the design lists', () => {
     assert.deepEqual(phase1, ['afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious']);
 });
 
-test('phase 2 adds Stunned and Surprised; phase 3 adds Disoriented, Empowered and Flying', () => {
+test('phase 2 adds Stunned and Surprised; phase 3 adds Disoriented, Empowered, Flying and the senses statuses', () => {
     const phase2 = CONDITIONS.filter((c) => isAutomated(c, 2) && !isAutomated(c, 1)).map((c) => c.id).sort();
     assert.deepEqual(phase2, ['stunned', 'surprised']);
     const phase3 = CONDITIONS.filter((c) => isAutomated(c, 3) && !isAutomated(c, 2)).map((c) => c.id).sort();
-    assert.deepEqual(phase3, ['disoriented', 'empowered', 'flying']);
+    assert.deepEqual(phase3, ['blind', 'disoriented', 'empowered', 'flying', 'hidden', 'invisible']);
     assert.equal(isAutomated(CONDITIONS_BY_ID.empowered), true, 'the release default is phase 3');
     assert.equal(isAutomated(CONDITIONS_BY_ID.determined), false);
-    for (const id of ['blind', 'hidden', 'invisible']) assert.equal(isAutomated(CONDITIONS_BY_ID[id], 99), false, id);
+    assert.deepEqual(CONDITIONS_BY_ID.blind.rolls, [{ who: 'self', mode: 'disadvantage', tests: 'attack', beyondSenses: true }]);
+    for (const id of ['hidden', 'invisible']) assert.deepEqual(CONDITIONS_BY_ID[id].rolls, [{ who: 'target', mode: 'disadvantage', tests: 'attack' }], id);
 });
 
 test('default durations are valid; Surprised ends after its next turn', () => {

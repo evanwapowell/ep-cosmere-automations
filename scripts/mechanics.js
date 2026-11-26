@@ -46,6 +46,12 @@ export function activeConditions(actor) {
     return list;
 }
 
+/** The skill penalty the engine puts on an actor's skill modifiers (Exhausted stacks at full), or 0. */
+export function skillPenalty(actor) {
+    if (!engineEnabled()) return 0;
+    return planAdjustments(activeConditions(actor), CONDITIONS_BY_ID, (id) => conditionMode(id) === MODES.FULL).skillPenalty || 0;
+}
+
 /**
  * Change the derived values in place. Runs on every client whenever the actor is prepared,
  * so it needs no stored data and follows setting changes at once.

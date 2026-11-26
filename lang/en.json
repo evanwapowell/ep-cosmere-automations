@@ -80,7 +80,14 @@
       "grantButton": "The test succeeded",
       "situational": "{actor}: {effect}.",
       "situationalRemind": "{actor}: {effect}.",
-      "situationalEnded": "{actor}'s {effect} ends ({reason})."
+      "situationalEnded": "{actor}'s {effect} ends ({reason}).",
+      "afflictedDamage": "{actor} takes {amount} {type} damage from {effect}.",
+      "afflictedRemind": "{actor}'s {effect} deals its damage now (end of its turn).",
+      "afflictedRemindHint": "Apply {amount} {type} damage (Afflicted is in remind-only mode).",
+      "surprisedSlow": "{actor} is Surprised and cannot take a fast turn: moved to a slow turn.",
+      "surprisedRemind": "{actor} is Surprised and cannot take a fast turn.",
+      "surprisedRemindHint": "Move it to a slow turn (Surprised is in remind-only mode).",
+      "surprisedBossHint": "Skip its fast turn (a boss keeps its slow turn)."
     },
     "dialog": {
       "amount": "Damage",

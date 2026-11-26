@@ -8,7 +8,7 @@ import { FakeActor, flush, Hooks, installFakeFoundry, rollAttack, rollSkill } fr
 
 const CONDITION_IDS = [
     'afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious', 'stunned',
-    'surprised', 'empowered', 'disoriented', 'flying',
+    'surprised', 'empowered', 'disoriented', 'flying', 'blind', 'hidden', 'invisible',
 ];
 const env = installFakeFoundry({
     settings: {
@@ -34,6 +34,7 @@ const reset = () => {
     delete globalThis.__dialogChoice;
     delete globalThis.__dialogPreset;
     delete globalThis.__cancelDialog;
+    delete globalThis.__dialogAttribute;
     target(null);
 };
 
@@ -191,6 +192,7 @@ test('a cancelled attack dialog does not stop the next fast-forwarded attack fro
     globalThis.__cancelDialog = true;
     assert.equal(await rollAttack(kal, weapon), null);
     delete globalThis.__cancelDialog;
+    delete globalThis.__dialogAttribute;
     const roll = await rollAttack(kal, weapon, { fastForward: true });
     assert.equal(roll.options.advantageMode, 'advantage');
 });
@@ -348,6 +350,67 @@ test('action effects in remind mode: a chat line, no effect', async () => {
     } finally {
         env.settings.set('actionEffects', 'full');
     }
+});
+
+test('Hidden or Invisible target: attacks against it gain a disadvantage; other tests do not', async () => {
+    for (const status of ['hidden', 'invisible']) {
+        reset();
+        const kal = new FakeActor({ name: 'Kal' });
+        const brute = new FakeActor({ name: 'Brute', type: 'adversary', hasPlayerOwner: false });
+        await api.apply(brute, status);
+        await flush();
+        target(brute);
+        await rollAttack(kal, sword(kal));
+        assert.equal(globalThis.__dialogPreset, 'disadvantage', status);
+        assert.equal((await rollSkill(kal, 'ins', { fastForward: true })).options.advantageMode, 'none', `${status}: not a skill test`);
+    }
+});
+
+test('Senseblind: attacks on a target beyond the senses range gain a disadvantage, within it they do not', async () => {
+    reset();
+    const previousCanvas = globalThis.canvas;
+    // 100 px per 5 ft square.
+    globalThis.canvas = { grid: { measurePath: ([a, b]) => ({ distance: (Math.hypot(b.x - a.x, b.y - a.y) / 100) * 5 }) } };
+    try {
+        const kal = new FakeActor({ name: 'Kal' });
+        const brute = new FakeActor({ name: 'Brute', type: 'adversary', hasPlayerOwner: false });
+        kal.getActiveTokens = () => [{ center: { x: 0, y: 0 } }];
+        await api.apply(kal, 'blind');
+        await flush();
+        kal.system.senses = { range: { value: 10 }, obscuredAffected: true };
+        const at = (squares) => {
+            game.user.targets = new Set([{ actor: brute, center: { x: squares * 100, y: 0 } }]);
+        };
+
+        at(4); // 20 ft
+        await rollAttack(kal, sword(kal));
+        assert.equal(globalThis.__dialogPreset, 'disadvantage', 'beyond 10 ft');
+        at(1); // 5 ft
+        await rollAttack(kal, sword(kal));
+        assert.notEqual(globalThis.__dialogPreset, 'disadvantage', 'within range');
+        at(4);
+        kal.system.senses.obscuredAffected = false;
+        await rollAttack(kal, sword(kal));
+        assert.notEqual(globalThis.__dialogPreset, 'disadvantage', 'senses not affected by obscurement');
+    } finally {
+        globalThis.canvas = previousCanvas;
+    }
+});
+
+test('Exhausted stays on a skill test rolled with another attribute (option or dialog), once', async () => {
+    reset();
+    const kal = new FakeActor({ name: 'Kal' });
+    await api.apply(kal, 'exhausted', { stacks: 2 });
+    await flush();
+    const penalty = (roll) => roll.terms.slice(3).map((t) => t.operator ?? t.number).join(' ');
+
+    assert.equal(penalty(await rollSkill(kal, 'ath', { fastForward: true })), '', 'own attribute: already in the modifier');
+    assert.equal(penalty(await rollSkill(kal, 'ath', { fastForward: true, attribute: 'int' })), '- 2', 'attribute option');
+    globalThis.__dialogAttribute = 'int';
+    assert.equal(penalty(await rollSkill(kal, 'ath')), '- 2', 'changed in the dialog');
+    assert.equal(penalty(await rollSkill(kal, 'ath', { attribute: 'int' })), '- 2', 'option and dialog: added once');
+    delete globalThis.__dialogAttribute;
+    assert.equal(penalty(await rollSkill(kal, 'ath')), '', 'dialog without a change');
 });
 
 test('api.modifiers previews a test', async () => {
