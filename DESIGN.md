@@ -76,9 +76,14 @@ Re-check against the source when building.
   Surprised and Disoriented at turn start.
 
 **Stances ("modality")**
-- Stance talents have `system.modality: 'stance'`. Using one sets the actor flag `cosmere-rpg.mode.stance` to the
-  talent's `system.id`, **enables that talent's own effects and disables the other stances' effects**
-  (`actor.setMode`). The Stormlight Handbook's Stonestance carries `system.deflect.bonus +1`, Vinestance +1 Physical
+- Stance talents have `system.modality: 'stance'`. `actor.setMode('stance', talent.system.id)` sets the actor flag
+  `cosmere-rpg.mode.stance`, **enables that talent's own effects and disables the other stances' effects** (verified
+  live 2026-11-25: Stonestance deflect +1, then back).
+- **But using a stance from the sheet never calls it** (verified live, system 3.1.2 with the Stormlight Handbook data):
+  talents can't be used themselves (`item.use()` returns null for a talent); the activation cost sits on a nested
+  *action* the talent grants, with a different id (e.g. `stone-stance` vs the talent's `stonestance`) and no modality,
+  and using that action only posts a chat card. The flag stays unset and every stance effect stays disabled. The
+  system's own mode activation only runs for items that have both an id and a modality. The Stormlight Handbook's Stonestance carries `system.deflect.bonus +1`, Vinestance +1 Physical
   and Cognitive defense, Bloodstance −2 all defenses; Vigilant Stance, Flamestance, Windstance and Ironstance have
   effects with no changes. An "End Stance" talent exists.
 - Nothing ends a stance at the end of the scene; the stance effect is non-temporary, so it shows on the sheet but not
@@ -211,6 +216,10 @@ they show on the token):
 ### Stances (small, can come early)
 
 Builds on the system's modality (see "System facts") rather than replacing it.
+- **Make stances actually activate:** on `cosmere-rpg.useItem`, when the used action belongs to a talent with
+  `system.modality` (the action's parent talent, or the talent that grants it: check how the nested action links back),
+  call `actor.setMode(modality, talent.system.id)`. Same for singer forms (`modality: 'singer-form'`). This is the
+  core of the feature; without it nothing below happens.
 - When the flag `cosmere-rpg.mode.stance` changes, add a marker effect "Stance: Stonestance" with the talent's icon
   (shows on the token) and its rule summary; remove it when the stance ends.
 - **End the stance** at the end of the scene: `actor.setMode('stance', <End Stance id>)`, or disable the stance
