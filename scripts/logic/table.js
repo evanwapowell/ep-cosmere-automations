@@ -2,6 +2,10 @@
  * Pure helpers over the condition table. No Foundry globals.
  */
 import { MECHANICS, VALUE_TYPES } from '../../data/conditions.js';
+import { parseDurationSpec } from './durations.js';
+
+/** The highest phase this release implements. */
+export const RELEASE_PHASE = 2;
 
 const KNOWN_MECHANICS = new Set(Object.values(MECHANICS));
 const KNOWN_VALUE_TYPES = new Set(Object.values(VALUE_TYPES));
@@ -41,6 +45,10 @@ export function validateTable(table) {
             errors.push(`${entry.id}: cannot be both multiInstance and stackable`);
         }
         if (entry.links?.includes(entry.id)) errors.push(`${entry.id}: links to itself`);
+        if (entry.duration != null) {
+            const parsed = parseDurationSpec(entry.duration);
+            if (!parsed.ok) errors.push(`${entry.id}: ${parsed.error}`);
+        }
     }
 
     for (const entry of table) {
@@ -102,11 +110,11 @@ export function resolveLinks(byId, id) {
 }
 
 /**
- * Whether phase 1 (or the given phase) does anything for this entry.
+ * Whether this release (or the given phase) does anything for this entry.
  * @param {object} entry
  * @param {number} [upToPhase=1]
  */
-export function isAutomated(entry, upToPhase = 1) {
+export function isAutomated(entry, upToPhase = RELEASE_PHASE) {
     return !!entry && !entry.outOfScope && entry.phase != null && entry.phase <= upToPhase;
 }
 

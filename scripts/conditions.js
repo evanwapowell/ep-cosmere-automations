@@ -17,9 +17,10 @@ import {
 } from './logic/sources.js';
 import { conditionIdOf } from './logic/table.js';
 import { instanceId } from './logic/values.js';
-import { conditionMode, engineEnabled } from './settings.js';
+import { buildDuration, durationText, shouldAskDuration } from './durations.js';
+import { conditionMode, engineEnabled, featureMode, SETTINGS } from './settings.js';
 import { actorName, esc, safe, serial, statusLabel, t } from './util.js';
-import { askAndSetValue } from './values.js';
+import { askDetails } from './values.js';
 
 export function registerConditionHooks() {
     Hooks.on('createActiveEffect', safe('createActiveEffect', onCreate));
@@ -54,10 +55,11 @@ function engineOptions(reason) {
  * Create a condition effect on an actor through the system's own status data.
  * @param {Actor} actor
  * @param {string} id
- * @param {{value?: object, sources?: {key: string, label: string}[], stacks?: number, extraInstance?: boolean, reason?: string}} [options]
+ * @param {{value?: object, sources?: {key: string, label: string}[], stacks?: number, extraInstance?: boolean,
+ *   duration?: object | null, reason?: string}} [options] duration: a stored duration state (null: none)
  * @returns {Promise<ActiveEffect | null>}
  */
-export async function createCondition(actor, id, { value, sources, stacks, extraInstance, reason } = {}) {
+export async function createCondition(actor, id, { value, sources, stacks, extraInstance, duration, reason } = {}) {
     if (actor?.system?.immunities?.condition?.[id]) {
         ui.notifications.warn(
             t('notify.immune', { actor: actorName(actor), condition: statusLabel(id) }, '{actor} is immune to {condition}.'),
@@ -71,6 +73,7 @@ export async function createCondition(actor, id, { value, sources, stacks, extra
     if (stacks) foundry.utils.setProperty(data, 'system.stacks', stacks);
     foundry.utils.setProperty(data, `flags.${MODULE_ID}.${FLAGS.SOURCES}`, sources ?? [{ ...MANUAL }]);
     if (value) foundry.utils.setProperty(data, `flags.${MODULE_ID}.${FLAGS.VALUE}`, value);
+    if (duration) foundry.utils.setProperty(data, `flags.${MODULE_ID}.${FLAGS.DURATION}`, duration);
     return cls.create(data, { parent: actor, keepId: true, ...engineOptions(reason) });
 }
 
@@ -99,10 +102,18 @@ async function onCreate(effect, options, userId) {
     if (mode === MODES.OFF) return;
     const entry = CONDITIONS_BY_ID[id];
 
-    // Value first, so the chat line can show it.
-    if (entry.value && !effect.getFlag(MODULE_ID, FLAGS.VALUE)) {
-        await askAndSetValue(effect, id, actorName(actor));
+    // Value and duration first, so the chat line can show them. The engine and the API set their own.
+    const byEngine = !!options?.[MODULE_ID]?.[OPTION_KEYS.ENGINE];
+    const askValue = !!entry.value && !effect.getFlag(MODULE_ID, FLAGS.VALUE);
+    const hasDuration = effect.getFlag(MODULE_ID, FLAGS.DURATION) != null;
+    const askDuration = !byEngine && !hasDuration && shouldAskDuration();
+    if (askValue || askDuration) {
+        await askDetails(effect, id, actorName(actor), { askValue, askDuration });
+    } else if (!byEngine && !hasDuration && entry.duration && featureMode(SETTINGS.DURATIONS) !== MODES.OFF) {
+        const duration = buildDuration(actor, entry.duration);
+        if (duration) await effect.setFlag(MODULE_ID, FLAGS.DURATION, duration);
     }
+    if (!actor.effects.has(effect.id)) return; // removed while the dialog was open
 
     const from = describeSources(readSources(storedSources(effect)));
     const links = (entry.links ?? []).map((link) => statusLabel(link, CONDITIONS_BY_ID[link]?.name));
@@ -118,7 +129,7 @@ async function onCreate(effect, options, userId) {
             { actor: `<b>${esc(actorName(actor))}</b>`, condition: `<b>${esc(effect.name)}</b>`, source: esc(from) },
             from ? '{actor} is now {condition} (from {source}).' : '{actor} is now {condition}.',
         ),
-        { reminder },
+        { reminder, detail: effect.getFlag(MODULE_ID, FLAGS.DURATION) ? durationText(effect) : undefined },
     );
 
     if (mode === MODES.FULL && entry.links?.length) {
@@ -164,15 +175,14 @@ async function onDelete(effect, options, userId) {
 
     const id = conditionIdOf(effect.statuses, CONDITIONS_BY_ID);
     if (id && conditionMode(id) !== MODES.OFF) {
-        const reason = options?.[MODULE_ID]?.[OPTION_KEYS.ENGINE]?.reason;
-        await postLine(
-            actor,
-            t(
-                reason ? 'chat.endedBecause' : 'chat.ended',
-                { actor: `<b>${esc(actorName(actor))}</b>`, condition: `<b>${esc(effect.name)}</b>`, reason: esc(reason) },
-                reason ? '{actor} is no longer {condition} ({reason} ended).' : '{actor} is no longer {condition}.',
-            ),
-        );
+        const engine = options?.[MODULE_ID]?.[OPTION_KEYS.ENGINE];
+        const reason = engine?.reason;
+        const data = { actor: `<b>${esc(actorName(actor))}</b>`, condition: `<b>${esc(effect.name)}</b>`, reason: esc(reason) };
+        let line;
+        if (engine?.expired) line = t('chat.expired', data, '{actor} is no longer {condition} (its duration ended).');
+        else if (reason) line = t('chat.endedBecause', data, '{actor} is no longer {condition} ({reason} ended).');
+        else line = t('chat.ended', data, '{actor} is no longer {condition}.');
+        await postLine(actor, line);
     }
 
     // Conditions this one brought with it lose it as a source, and end if nothing else holds them.

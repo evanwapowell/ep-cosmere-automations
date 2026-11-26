@@ -23,6 +23,19 @@ test('phase 1 automates the conditions the design lists', () => {
     assert.deepEqual(phase1, ['afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious']);
 });
 
+test('phase 2 adds Stunned and Surprised; the release default is phase 2', () => {
+    const phase2 = CONDITIONS.filter((c) => isAutomated(c, 2) && !isAutomated(c, 1)).map((c) => c.id).sort();
+    assert.deepEqual(phase2, ['stunned', 'surprised']);
+    assert.equal(isAutomated(CONDITIONS_BY_ID.stunned), true);
+    assert.equal(isAutomated(CONDITIONS_BY_ID.empowered), false);
+});
+
+test('default durations are valid; Surprised ends after its next turn', () => {
+    assert.deepEqual(CONDITIONS_BY_ID.surprised.duration, ['endOfNextTurn']);
+    const bad = validateTable([{ id: 'x', name: 'X', summary: 's', mechanics: [], links: [], duration: ['soon'] }]);
+    assert.ok(bad.some((e) => e.includes('unknown duration kind')), bad.join('\n'));
+});
+
 test('out-of-scope and marker conditions are never automated', () => {
     for (const id of ['depleted', 'diminished', 'dead', 'burrowing']) assert.equal(isAutomated(CONDITIONS_BY_ID[id], 99), false);
 });

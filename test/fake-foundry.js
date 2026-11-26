@@ -106,7 +106,11 @@ export class FakeEffect {
     }
     updateSource(changes) {
         for (const [k, v] of Object.entries(changes)) {
-            if (k.includes('.')) setProperty(this._source, k, v);
+            const last = k.split('.').at(-1);
+            if (last.startsWith('-=')) {
+                const parent = getProperty(this._source, k.split('.').slice(0, -1).join('.'));
+                if (parent) delete parent[last.slice(2)];
+            } else if (k.includes('.')) setProperty(this._source, k, v);
             else if (v && typeof v === 'object' && !Array.isArray(v) && typeof this._source[k] === 'object') {
                 this._source[k] = deepMerge(this._source[k] ?? {}, v);
             } else this._source[k] = v;
@@ -242,7 +246,62 @@ export class FakeActor extends Actor {
     }
 }
 
-const STATUS_IDS = ['afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious', 'stunned'];
+/**
+ * A combat whose turn pointer moves like Advanced Encounters moves it: a turn starts when the pointer is set to
+ * a combatant and ends when it is set back to nobody. Each move fires `updateCombat(combat, changed)`.
+ */
+export class FakeCombat {
+    constructor(entries) {
+        this.id = randomID();
+        this.round = 0;
+        this.turn = null;
+        this.combatants = new Collection();
+        for (const { actor, fast = false } of entries) {
+            const id = randomID();
+            const flags = { 'cosmere-rpg': { turnSpeed: fast ? 'fast' : 'slow' } };
+            this.combatants.set(id, { id, actor, turnSpeed: fast ? 'fast' : 'slow', getFlag: (sc, k) => getProperty(flags, `${sc}.${k}`) });
+        }
+        this.turns = this.combatants.contents;
+        this.previous = null;
+    }
+    get started() {
+        return this.round > 0;
+    }
+    #state() {
+        const c = this.turn == null ? null : this.turns[this.turn];
+        return { round: this.round, turn: this.turn, combatantId: c?.id ?? null };
+    }
+    async #move(update) {
+        const prior = this.#state();
+        Object.assign(this, update);
+        this.previous = prior;
+        Hooks.callAll('updateCombat', this, { ...update }, {}, globalThis.game.user.id);
+        await flush();
+    }
+    combatantOf(actor) {
+        return this.turns.find((c) => c.actor === actor);
+    }
+    start() {
+        globalThis.game.combat = this;
+        return this.#move({ round: 1, turn: null });
+    }
+    startTurn(actor) {
+        return this.#move({ turn: this.turns.indexOf(this.combatantOf(actor)) });
+    }
+    endTurn() {
+        return this.#move({ turn: null });
+    }
+    nextRound() {
+        return this.#move({ round: this.round + 1, turn: null });
+    }
+    async end() {
+        if (globalThis.game.combat === this) globalThis.game.combat = null;
+        Hooks.callAll('deleteCombat', this, {}, globalThis.game.user.id);
+        await flush();
+    }
+}
+
+const STATUS_IDS = ['afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious', 'stunned', 'surprised'];
 
 /** Install the globals. Returns handles the tests use. */
 export function installFakeFoundry({ settings: overrides = {} } = {}) {
@@ -273,7 +332,15 @@ export function installFakeFoundry({ settings: overrides = {} } = {}) {
         foundry: {
             utils: { setProperty, getProperty, hasProperty, randomID },
             applications: {
-                api: { DialogV2: { prompt: async () => globalThis.__dialogAnswer ?? null } },
+                api: {
+                    DialogV2: {
+                        prompt: async () => {
+                            globalThis.__dialogCount = (globalThis.__dialogCount ?? 0) + 1;
+                            return globalThis.__dialogAnswer ?? null;
+                        },
+                        confirm: async () => true,
+                    },
+                },
                 ux: { FormDataExtended: class { constructor() { this.object = {}; } } },
             },
         },

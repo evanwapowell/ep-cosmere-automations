@@ -7,13 +7,15 @@ export const FLAGS = Object.freeze({
     VALUE: 'value',
     /** Why the condition is on the actor: [{key, label}]. */
     SOURCES: 'sources',
+    /** Duration state (see scripts/logic/durations.js). */
+    DURATION: 'duration',
     /** Marks the stance marker effect; holds the talent's system id. */
     STANCE_MARKER: 'stanceMarker',
 });
 
 /** Options this module passes through document operations (under options[MODULE_ID]). */
 export const OPTION_KEYS = Object.freeze({
-    /** Created or deleted by the engine; carries {reason} for the chat line. */
+    /** Created or deleted by the engine; carries {reason} or {expired: true} for the chat line. */
     ENGINE: 'engine',
 });
 

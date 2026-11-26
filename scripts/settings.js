@@ -8,11 +8,15 @@ export const SETTINGS = Object.freeze({
     CHAT: 'chatLines',
     NPC_GM_ONLY: 'npcChatGmOnly',
     STANCES: 'stances',
+    DURATIONS: 'durations',
+    ASK_DURATION: 'askDuration',
+    COMBAT_ENDS_SCENE: 'combatEndsScene',
+    SCENE_RECHARGE: 'sceneRecharge',
     conditionKey: (id) => `condition.${id}`,
 });
 
 /** Conditions that have a mode setting in this release. */
-export const AUTOMATED_CONDITIONS = CONDITIONS.filter((entry) => isAutomated(entry, 1));
+export const AUTOMATED_CONDITIONS = CONDITIONS.filter((entry) => isAutomated(entry));
 
 function modeChoices() {
     return {
@@ -70,6 +74,57 @@ export function registerSettings() {
         default: MODES.REMIND,
     });
 
+    game.settings.register(MODULE_ID, SETTINGS.DURATIONS, {
+        name: t('settings.durations.name', null, 'Durations'),
+        hint: t(
+            'settings.durations.hint',
+            null,
+            'Full: effects end by themselves when their duration runs out (turns follow Foundry\'s turn order, as Advanced Encounters sets it). Remind: a chat line says it would end now.',
+        ),
+        scope: 'world',
+        config: true,
+        type: String,
+        choices: modeChoices(),
+        default: MODES.REMIND,
+    });
+
+    game.settings.register(MODULE_ID, SETTINGS.ASK_DURATION, {
+        name: t('settings.askDuration.name', null, 'Ask for a duration'),
+        hint: t('settings.askDuration.hint', null, 'When a condition is turned on from the token or sheet, ask how long it lasts.'),
+        scope: 'world',
+        config: true,
+        type: String,
+        choices: {
+            combat: t('settings.askDuration.combat', null, 'During combat'),
+            always: t('settings.askDuration.always', null, 'Always'),
+            never: t('settings.askDuration.never', null, 'Never'),
+        },
+        default: 'combat',
+    });
+
+    game.settings.register(MODULE_ID, SETTINGS.COMBAT_ENDS_SCENE, {
+        name: t('settings.combatEndsScene.name', null, 'Ending combat ends the scene'),
+        hint: t(
+            'settings.combatEndsScene.hint',
+            null,
+            'When an encounter is ended, also do the end of the scene for its combatants (effects that last until the end of the scene, stances, per-scene uses).',
+        ),
+        scope: 'world',
+        config: true,
+        type: Boolean,
+        default: true,
+    });
+
+    game.settings.register(MODULE_ID, SETTINGS.SCENE_RECHARGE, {
+        name: t('settings.sceneRecharge.name', null, 'Recharge per-scene uses at the end of a scene'),
+        hint: t('settings.sceneRecharge.hint', null, 'Items whose uses recharge per scene (such as Recover) get them back.'),
+        scope: 'world',
+        config: true,
+        type: String,
+        choices: modeChoices(),
+        default: MODES.REMIND,
+    });
+
     for (const entry of AUTOMATED_CONDITIONS) {
         game.settings.register(MODULE_ID, SETTINGS.conditionKey(entry.id), {
             name: t('settings.condition.name', { name: entry.name }, `Condition: ${entry.name}`),
@@ -98,7 +153,7 @@ export function engineEnabled() {
  * @param {string} id
  */
 export function conditionMode(id) {
-    if (!engineEnabled() || !isAutomated(CONDITIONS_BY_ID[id], 1)) return MODES.OFF;
+    if (!engineEnabled() || !isAutomated(CONDITIONS_BY_ID[id])) return MODES.OFF;
     try {
         return game.settings.get(MODULE_ID, SETTINGS.conditionKey(id)) ?? MODES.OFF;
     } catch {
@@ -107,11 +162,24 @@ export function conditionMode(id) {
 }
 
 export function stanceMode() {
+    return featureMode(SETTINGS.STANCES);
+}
+
+/** Mode of a world-level feature setting ('durations', 'sceneRecharge'). */
+export function featureMode(key) {
     if (!engineEnabled()) return MODES.OFF;
     try {
-        return game.settings.get(MODULE_ID, SETTINGS.STANCES) ?? MODES.OFF;
+        return game.settings.get(MODULE_ID, key) ?? MODES.OFF;
     } catch {
         return MODES.OFF;
+    }
+}
+
+export function setting(key, fallback) {
+    try {
+        return game.settings.get(MODULE_ID, key);
+    } catch {
+        return fallback;
     }
 }
 
@@ -126,13 +194,18 @@ export function chatSetting() {
     }
 }
 
-/** Re-prepare every actor so derived adjustments follow a settings change at once. */
-function refreshActors() {
+/** World actors plus the actors of unlinked tokens on every scene. */
+export function allActors() {
     const actors = [...(game.actors ?? [])];
     for (const scene of game.scenes ?? []) {
         for (const token of scene.tokens ?? []) if (!token.actorLink && token.actor) actors.push(token.actor);
     }
-    for (const actor of actors) {
+    return actors;
+}
+
+/** Re-prepare every actor so derived adjustments follow a settings change at once. */
+function refreshActors() {
+    for (const actor of allActors()) {
         try {
             actor.reset();
             actor.sheet?.rendered && actor.sheet.render();

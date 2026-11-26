@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { FakeActor, flush, Hooks, installFakeFoundry } from './fake-foundry.js';
 
 const FULL = Object.fromEntries(
-    ['afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious'].map((id) => [
+    ['afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious', 'stunned', 'surprised'].map((id) => [
         `condition.${id}`,
         'full',
     ]),
@@ -35,7 +35,8 @@ test('the module loads, registers its settings and exposes the API', () => {
     assert.ok(api, 'api missing');
     for (const fn of ['apply', 'remove', 'list', 'endStance']) assert.equal(typeof api[fn], 'function');
     assert.equal(env.settings.get('condition.prone'), 'full');
-    assert.equal(env.settings.has('condition.stunned'), false, 'later-phase conditions have no setting yet');
+    assert.equal(env.settings.get('condition.stunned'), 'full', 'phase 2 conditions have a setting');
+    assert.equal(env.settings.has('condition.empowered'), false, 'later-phase conditions have no setting yet');
 });
 
 test('HUD Prone brings Slowed; Slowed halves walking speed; removing Prone removes Slowed', async () => {

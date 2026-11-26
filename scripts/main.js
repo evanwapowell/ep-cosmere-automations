@@ -4,6 +4,7 @@
 import { CONDITIONS } from '../data/conditions.js';
 import { buildApi } from './api.js';
 import { registerConditionHooks } from './conditions.js';
+import { registerDurationHooks } from './durations.js';
 import { MODULE_ID, SYSTEM_ID } from './constants.js';
 import { validateTable } from './logic/table.js';
 import { registerMechanics } from './mechanics.js';
@@ -27,6 +28,7 @@ Hooks.once('init', () => {
     registerMechanics();
     registerConditionHooks();
     registerStanceHooks();
+    registerDurationHooks();
 
     const module = game.modules.get(MODULE_ID);
     if (module) module.api = buildApi();

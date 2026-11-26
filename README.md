@@ -4,10 +4,10 @@ A Foundry VTT (v13) module that automates rules of the Cosmere RPG system (`cosm
 starting with real conditions: conditions that change numbers and rolls, carry values, last for a set time, bring
 linked conditions with them and end by themselves.
 
-**Status:** 0.1.0 (phase 1) is written and unit-tested, but has not been tried in a live world yet. Don't use it in
-a game until it has been tested on a throwaway scene. See [DESIGN.md](DESIGN.md).
+**Status:** phases 1 and 2 are written and unit-tested, but have not been tried in a live world yet. Don't use them
+in a game until they have been tested on a throwaway scene. See [DESIGN.md](DESIGN.md).
 
-## What 0.1.0 does
+## What it does
 
 - **Conditions with mechanics:** Exhausted (−1 per stack on every skill), Slowed (half movement), Immobilized,
   Restrained and Unconscious (movement 0), Enhanced (+X to one attribute for skills and movement, not defenses).
@@ -16,6 +16,11 @@ a game until it has been tested on a throwaway scene. See [DESIGN.md](DESIGN.md)
 - **Values:** Afflicted asks for damage type and amount, Enhanced for attribute and amount; both can have several
   instances.
 - **Stances:** using a stance's action switches the stance on (its effects apply) and shows it on the token.
+- **Durations** with Cosmere's turn rules: until the start of this phase next round, the start or end of a
+  creature's (next) turn, the end of the scene, a long rest, a number of days, or until used, whichever comes first.
+  Turns follow Foundry's turn pointer as Cosmere Advanced Encounters moves it.
+- **End of scene** (button in the token controls, or ending combat): scene-long effects and stances end, per-scene
+  uses such as Recover recharge. A long rest removes one stack of Exhausted.
 - **Chat lines** when a condition starts or ends (NPC lines whispered to the GM).
 - **Every feature can be switched off.** Each condition and stances have a setting: full, remind only (a chat
   reminder, no changes) or off. Everything starts in remind-only mode.
@@ -27,6 +32,10 @@ const api = game.modules.get('ep-cosmere-automations').api;
 await api.apply(actor, 'afflicted', { value: { type: 'keen', amount: 3 } });
 await api.apply(actor, 'exhausted', { stacks: 1 });
 await api.apply(actor, 'slowed', { source: injuryItem }); // ends when the item is deleted
+await api.apply(actor, 'stunned', { duration: 'endOfNextTurn' });
+await api.apply(actor, 'immobilized', { duration: ['untilUsed', 'endOfScene'] }); // whichever comes first
+await api.endScene();          // the tokens on the viewed scene
+await api.advanceDays(1);
 await api.remove(actor, 'prone');
 api.list(actor); // [{ id, name, value, stacks, sources, from, active, mode }]
 await api.endStance(actor);

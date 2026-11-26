@@ -5,6 +5,7 @@
 import { CONDITIONS, CONDITIONS_BY_ID } from '../data/conditions.js';
 import { cleanupSources, conditionEffects, createCondition } from './conditions.js';
 import { FLAGS, MODULE_ID } from './constants.js';
+import { advanceDays, buildDuration, durationText, endScene, setDuration, useUp } from './durations.js';
 import { activeConditions } from './mechanics.js';
 import { addSource, describeSources, effectKey, itemKey, MANUAL, readSources } from './logic/sources.js';
 import { normalizeValue } from './logic/values.js';
@@ -36,9 +37,12 @@ function toSource(actor, source) {
  * @param {object} [options.value]  Afflicted: {type, amount}; Enhanced: {attribute, amount}
  * @param {number} [options.stacks] Exhausted: stacks to add (default 1)
  * @param {Item | ActiveEffect | string | {key, label}} [options.source] why; it ends when an item or effect source is deleted
+ * @param {string | string[] | {kinds, days, turnOf}} [options.duration] how long it lasts ('endOfNextTurn',
+ *   ['untilUsed', 'endOfNextTurn'], {kinds: 'days', days: 3}, 'none'); default: the table's default, else until removed.
+ *   On a condition already present, a given duration replaces the old one.
  * @returns {Promise<ActiveEffect | null>}
  */
-async function apply(actor, id, { value, stacks, source } = {}) {
+async function apply(actor, id, { value, stacks, source, duration } = {}) {
     const entry = CONDITIONS_BY_ID[id];
     if (!entry) throw new Error(`Unknown condition "${id}"`);
     if (!actor) throw new Error('No actor');
@@ -55,9 +59,15 @@ async function apply(actor, id, { value, stacks, source } = {}) {
     }
     const src = toSource(actor, source);
     const existing = conditionEffects(actor, id);
+    const durationState = buildDuration(actor, duration !== undefined ? duration : entry.duration);
 
     if (existing.length && entry.multiInstance) {
-        return createCondition(actor, id, { value: checkedValue, sources: [src], extraInstance: true });
+        return createCondition(actor, id, {
+            value: checkedValue,
+            sources: [src],
+            extraInstance: true,
+            duration: durationState,
+        });
     }
     if (existing.length) {
         const effect = existing[0];
@@ -69,12 +79,14 @@ async function apply(actor, id, { value, stacks, source } = {}) {
         }
         if (entry.stackable) update['system.stacks'] = (effect.system?.stacks ?? 1) + Math.max(1, stacks ?? 1);
         if (Object.keys(update).length) await effect.update(update);
+        if (duration !== undefined) await setDuration(effect, duration);
         return effect;
     }
     return createCondition(actor, id, {
         value: checkedValue,
         sources: [src],
         stacks: entry.stackable ? Math.max(1, stacks ?? 1) : undefined,
+        duration: durationState,
     });
 }
 
@@ -124,6 +136,8 @@ function list(actor) {
             stacks: CONDITIONS_BY_ID[id]?.stackable ? (effect.system?.stacks ?? 1) : null,
             sources,
             from: describeSources(sources),
+            duration: effect.getFlag(MODULE_ID, FLAGS.DURATION) ?? null,
+            lasts: durationText(effect),
         };
     });
 }
@@ -136,6 +150,10 @@ export function buildApi() {
         endStance,
         syncStanceMarker,
         cleanupSources,
+        endScene,
+        advanceDays,
+        setDuration,
+        use: useUp,
         conditions: CONDITIONS,
     });
 }

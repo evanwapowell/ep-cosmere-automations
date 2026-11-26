@@ -12,8 +12,8 @@ conditions.
   effects", is in its backlog with no date, so we build it here.
 - **Who it's for:** any table using the system, played by hand. It also exposes an API that a GM helper module
   (`claude-gm-tools`) can call.
-- **Status:** phase 1 written (0.1.0, 2026-11-26): unit-tested in Node against a fake Foundry, **not yet tried in
-  a live world**. See "Phase 1 as built".
+- **Status:** phases 1 and 2 written (2026-11-26): unit-tested in Node against a fake Foundry, **not yet tried in
+  a live world**. See "Phase 1 as built" and "Phase 2 as built".
 
 ## Ground rules
 
@@ -101,6 +101,20 @@ that depends on them ("half your movement") has to run after this method.
   effects with no changes. An "End Stance" talent exists.
 - Nothing ends a stance at the end of the scene; the stance effect is non-temporary, so it shows on the sheet but not
   on the token; `actor.clearMode()` filters on the wrong field and is never called by the system (don't use it).
+
+**Turns and rounds**
+- The system's combat calls `cosmere-rpg.combatRoundStart` / `combatRoundEnd` from `startCombat` / `nextRound` on
+  the GM's client. Its own tracker marks a combatant as having acted with the flag `cosmere-rpg.activated`; it does
+  not move Foundry's turn pointer.
+- *Advanced Encounters* 1.3.1 (source: `posadist-revolution/cosmere-advanced-encounters`) moves the pointer:
+  "activate" on a combatant sets `combat.turn` to it (a turn starts) and marks it activated; "next turn" sets
+  `turn: null` (the turn ends); a new round first sets `turn: null`, then advances the round. So in AE, `activated`
+  means "has started its turn", not "has finished".
+- Phase order comes from the combatant's initiative getter: `turnSpeed` fast +1000, characters +500 → fast PC, fast
+  NPC, slow PC, slow NPC. A boss gets a second, fast combatant.
+- `actor.longRest()` fires `cosmere-rpg.rest(actor, 'long')` and leaves "reduce Exhausted by 1" as a TODO.
+  Per-scene uses (`system.resources.<uses|charges|ammo>.recharge === 'per_scene'`) are recharged by `item.recharge()`
+  only when someone calls it.
 
 **Other modules**
 - *Cosmere Automated Actions* has a "Let conditions modify rolls" setting (`automateConditions`) that appends the
@@ -308,7 +322,7 @@ Each phase is a release that works on its own. Turn conditions on one at a time,
 | --- | --- | --- |
 | 0. Checks (no code) | In the world on a `zz` scene: does Automated Actions' Exhausted setting change totals? How does Automated Actions apply Enhanced and Empowered? Do Advanced Encounters and the token ruler read `movement.walk.rate.value` (so Slowed and Immobilized show up there)? Does Foundry v13 remove expired effects by itself? *(The question "does a toggled status keep changes added to `CONFIG.statusEffects`" no longer matters: phase 1 doesn't use that.)* | 1–2 h |
 | 1. Core | Skeleton and settings; the condition table; static mechanics (Exhausted, Slowed, Immobilized, Restrained, Unconscious, Enhanced); links (Prone → Slowed, Unconscious → Prone); sources; apply dialog for values; chat lines; API; **stances (4.5)** | 14–20 h (code written: see "Phase 1 as built") |
-| 2. Durations | The duration kinds, expiry on turn start/end, round start, combat end, rest; chat line on expiry; at the end of a scene also recharge per-scene item uses (Recover) | 7–12 h |
+| 2. Durations | The duration kinds, expiry on turn start/end, round start, combat end, rest; chat line on expiry; at the end of a scene also recharge per-scene item uses (Recover) | 7–12 h (code written: see "Phase 2 as built") |
 | 3. Roll layer | Advantage/disadvantage from conditions and situational effects (Dodge, Brace, Gain Advantage, Prone, Restrained, Empowered, Disoriented, Flying, Flamestance); flavor line; dialog pre-selection | 8–12 h |
 | 4. Triggers | Afflicted ticks, Determined button, Surprised fast-turn block, Empowered refill, 0 health → Unconscious + injury roll + injury condition, Steady Aim damage, Focused cost | 10–14 h |
 | 5. Reactive Strike reminder (4.6) | | 6–10 h |
@@ -390,6 +404,43 @@ What the code does, and where it differs from the plan above.
   stacks (skill modifiers −2 on the sheet and in a roll); Enhanced Speed +1 (skills and movement go up, defenses
   don't); Afflicted from the HUD (dialog, name shows the value); a stance action with stances set to full (stance
   effects switch on, the marker appears on the token).
+
+## Phase 2 as built (durations)
+
+- **A duration is a list of kinds; the first to trigger ends the effect.** Kinds: `phaseNextRound` (until the start
+  of the same phase next round), `startOfNextTurn`, `endOfTurn`, `endOfNextTurn` (a turn that starts after the effect
+  was applied; the turn in progress doesn't count), `endOfScene`, `longRest`, `days`, `untilUsed`. "After your next
+  turn" (Surprised) is `endOfNextTurn`. Stored in the effect's flags with the actor whose turns count (`turnOf`,
+  default the affected actor; a granted buff can count the giver's turns) and the round and phase it was applied in.
+  Pure logic in `scripts/logic/durations.js`.
+- **Turn-based kinds also end when the encounter or scene ends**, so nothing outlives the fight waiting for a turn
+  that won't come. `phaseNextRound` applied outside combat becomes `endOfScene`.
+- **Events:** the active GM's client watches the combat's turn pointer (`updateCombat` on `turn` / `round`),
+  compares it with the last pointer it saw and turns the difference into turn end, round start and turn start.
+  This follows Advanced Encounters' pointer as well as plain Foundry turn order. Deleting a combat ends combat
+  durations and, by default, the scene for its combatants. Long rest: `cosmere-rpg.rest` on the resting client.
+- **Without Advanced Encounters**, the system's own tracker doesn't move the pointer, so turn-based durations only
+  tick if the GM uses Foundry's turn order; round-based ones still tick on round changes.
+- **End of scene** (a GM button in the token controls, `api.endScene()`, or ending an encounter): effects lasting
+  until the end of the scene end, stances end (`endStance`), per-scene uses recharge. Each follows its setting.
+- **Long rest:** effects lasting until a long rest end, and Exhausted loses one stack (part of Exhausted's own
+  setting; turn Automated Actions' exhaustion handling off if both are on).
+- **Setting the duration:** the API's `duration` option; else the table's default (Surprised: end of next turn;
+  Empowered: end of scene; Determined: until used); and when a condition is turned on from the token or sheet during
+  combat (setting: during combat / always / never), the same dialog as for values asks how long it lasts.
+- **Modes:** durations full / remind / off (remind by default). Remind posts "Kal's Stunned ends now" once and stops
+  tracking; the effect stays.
+- **API:** `apply(…, {duration})`, `setDuration(effect, spec)`, `endScene({actors})`, `advanceDays(n, {actors})`,
+  `use(effect)` (ends an "until used" effect; the roll layer and triggers will call it), and `list()` gains
+  `duration` and `lasts` (readable text).
+- **Stunned and Surprised** now have settings (their action loss stays with Advanced Encounters).
+- **Not built:** Surprised's "no fast turn" (phase 4 trigger), Foundry's own effect durations are not used, a
+  per-day clock (days only advance through the API).
+- **To try live** (durations set to full, Advanced Encounters on): Stunned applied during Kal's turn with "until the
+  end of its next turn" survives that turn and ends at the end of Kal's next one; Restrained with "until the start of
+  this phase next round" during a slow PC turn ends when the first slow PC starts next round; Surprised on an NPC at
+  the start of combat ends after its first turn; End Combat ends a stance and refills Recover; a long rest takes one
+  Exhausted stack. Check that only one chat line appears per event with two GMs logged in.
 
 ## Development
 

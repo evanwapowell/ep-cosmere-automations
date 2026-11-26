@@ -13,6 +13,7 @@
  * - stackable   the system stacks it (system.stacks)
  * - mechanics   what the engine changes, by name (see MECHANICS)
  * - links       conditions this one brings with it (removed with it unless something else applied them)
+ * - duration    default duration kinds (see scripts/logic/durations.js), used when none is given
  * - phase       the release that automates it; entries for later phases are listed but do nothing yet
  * - handledBy   another module or Foundry core already covers part of it (informational)
  * - outOfScope  not part of the Stormlight rules
@@ -86,6 +87,7 @@ export const CONDITIONS = Object.freeze([
         summary: 'When it fails a test, it can add an Opportunity to the result; the condition then ends.',
         mechanics: [],
         links: [],
+        duration: ['untilUsed'],
         phase: 4,
     },
     {
@@ -112,6 +114,7 @@ export const CONDITIONS = Object.freeze([
         summary: 'Gains an advantage on every test and refills its Investiture at the start of each of its turns. Ends at the end of the scene.',
         mechanics: [],
         links: [],
+        duration: ['endOfScene'],
         phase: 3,
     },
     {
@@ -216,6 +219,7 @@ export const CONDITIONS = Object.freeze([
         summary: 'Loses its reactions, has 1 fewer action and cannot take a fast turn. Ends after its next turn.',
         mechanics: [],
         links: [],
+        duration: ['endOfNextTurn'],
         phase: 2,
         handledBy: 'Cosmere Advanced Encounters (actions)',
     },

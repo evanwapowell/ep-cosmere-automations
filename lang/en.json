@@ -28,6 +28,25 @@
         "full": "Full: apply its mechanics",
         "remind": "Remind only: a chat reminder, no changes",
         "off": "Off"
+      },
+      "durations": {
+        "name": "Durations",
+        "hint": "Full: effects end by themselves when their duration runs out (turns follow Foundry's turn order, as Advanced Encounters sets it). Remind: a chat line says it would end now."
+      },
+      "askDuration": {
+        "name": "Ask for a duration",
+        "hint": "When a condition is turned on from the token or sheet, ask how long it lasts.",
+        "combat": "During combat",
+        "always": "Always",
+        "never": "Never"
+      },
+      "combatEndsScene": {
+        "name": "Ending combat ends the scene",
+        "hint": "When an encounter is ended, also do the end of the scene for its combatants (effects that last until the end of the scene, stances, per-scene uses)."
+      },
+      "sceneRecharge": {
+        "name": "Recharge per-scene uses at the end of a scene",
+        "hint": "Items whose uses recharge per scene (such as Recover) get them back."
       }
     },
     "chat": {
@@ -39,20 +58,47 @@
       "stanceStarted": "{actor} takes {stance}.",
       "stanceEnded": "{actor} is no longer in a stance.",
       "stanceRemind": "{actor} takes {stance}.",
-      "stanceRemindHint": "Its effects are not switched on automatically (stances are in remind-only mode)."
+      "stanceRemindHint": "Its effects are not switched on automatically (stances are in remind-only mode).",
+      "wouldExpire": "{actor}'s {effect} ends now.",
+      "wouldExpireHint": "Remove it by hand (durations are in remind-only mode).",
+      "effectExpired": "{actor}'s {effect} has ended.",
+      "expired": "{actor} is no longer {condition} (its duration ended).",
+      "exhaustionRemind": "{actor} finished a long rest.",
+      "exhaustionRemindHint": "Exhausted goes down by 1.",
+      "stanceSceneEnd": "{actor}'s stance ends with the scene.",
+      "recharged": "{actor} recharges {items}.",
+      "rechargeRemind": "{actor} can recharge {items} (end of scene)."
     },
     "dialog": {
       "amount": "Damage",
       "damageType": "Damage type",
       "attribute": "Attribute",
       "bonus": "Amount",
-      "apply": "Apply"
+      "apply": "Apply",
+      "endSceneTitle": "End scene",
+      "endSceneBody": "End the scene for the tokens on this scene? Effects that last until the end of the scene end, stances end and per-scene uses recharge, as the module settings say.",
+      "duration": "Lasts"
     },
     "notify": {
       "immune": "{actor} is immune to {condition}."
     },
     "effect": {
       "stance": "Stance: {stance}"
+    },
+    "reason": {
+      "longRest": "long rest"
+    },
+    "controls": {
+      "endScene": "End scene (EP Cosmere Automations)"
+    },
+    "duration": {
+      "none": "Until removed",
+      "phaseNextRound": "Until the start of this phase next round",
+      "startOfNextTurn": "Until the start of its next turn",
+      "endOfTurn": "Until the end of its turn",
+      "endOfNextTurn": "Until the end of its next turn",
+      "endOfScene": "Until the end of the scene",
+      "longRest": "Until a long rest"
     }
   }
 }

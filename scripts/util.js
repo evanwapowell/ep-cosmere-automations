@@ -72,6 +72,12 @@ export function systemChoices() {
     return { damageTypes, attributes };
 }
 
+/** Whether this client is the active GM, which handles world-level work (turn events, expiry). */
+export function isActiveGM() {
+    const gm = game.users?.activeGM;
+    return gm ? gm.id === game.user.id : !!game.user?.isGM;
+}
+
 const queues = new Map();
 
 /**
