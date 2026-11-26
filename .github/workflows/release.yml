@@ -1,7 +1,10 @@
-# Build and attach module.json and module.zip to a GitHub release, either when a version tag (v1.2.3) is pushed
-# (tools/release.sh) or when a release is published on GitHub's website (Releases → Draft a new release → a new
-# tag like v0.3.0 on the branch to release). Runs the tests first. The zip has the files at its root, without what
-# .gitattributes marks export-ignore.
+# Build module.json and module.zip and publish them as a GitHub release. Three ways to start it:
+# - push a version tag (v1.2.3), e.g. with tools/release.sh;
+# - publish a release on GitHub's website with a new tag like v0.3.0 (the files are attached to it);
+# - Actions → Release → "Run workflow": pick the branch to release and type the version (0.3.0); the tag and
+#   release are created at that branch's latest commit. (This file must also be on the default branch for the
+#   button to show; the run uses the copy on the chosen branch.)
+# Runs the tests first. The zip has the files at its root, without what .gitattributes marks export-ignore.
 # Foundry installs from https://github.com/evanwapowell/ep-cosmere-automations/releases/latest/download/module.json
 name: Release
 
@@ -10,6 +13,12 @@ on:
     tags: ['v*.*.*']
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 0.3.0 (creates tag v0.3.0 at the chosen branch)'
+        required: true
+        type: string
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -23,6 +32,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Work out the tag
+        id: tag
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then tag="v${INPUT_VERSION#v}"; else tag="$GITHUB_REF_NAME"; fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "Not a version tag: $tag" >&2; exit 1; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -31,8 +49,10 @@ jobs:
         run: node --test
 
       - name: Build module.json and module.zip
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           node - "$version" "$GITHUB_REPOSITORY" <<'JS'
           const fs = require('fs');
           const [version, repo] = process.argv.slice(2);
@@ -51,10 +71,11 @@ jobs:
       - name: Publish the release (or add the files to the one just published)
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" module.zip module.json --repo "$GITHUB_REPOSITORY" --clobber
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" module.zip module.json --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" module.zip module.json \
-              --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+            gh release create "$TAG" module.zip module.json --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "$TAG" --generate-notes
           fi
