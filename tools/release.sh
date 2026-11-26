@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Release: bump the version in module.json, run the tests, commit, tag, build module.zip and publish a
-# GitHub release with module.json and module.zip attached.
+# Release: bump the version in module.json, run the tests, commit, tag and push. The "Release" GitHub Actions
+# workflow (.github/workflows/release.yml) then builds module.zip and publishes the GitHub release.
 #
-#   tools/release.sh 0.1.1
+#   tools/release.sh 0.3.1
 #
-# Needs: node, git, zip-capable `git archive`, and the GitHub CLI (`gh`) logged in. Run from a clean main branch.
+# Needs: node and git. Run from a clean checkout of the branch you release from.
 set -euo pipefail
 
 version="${1:-}"
@@ -21,25 +21,17 @@ fi
 
 node --test
 
-repo="evanwapowell/ep-cosmere-automations"
-node - "$version" "$repo" <<'EOF'
+node - "$version" <<'JS'
 const fs = require('fs');
-const [version, repo] = process.argv.slice(2);
+const [version] = process.argv.slice(2);
 const manifest = JSON.parse(fs.readFileSync('module.json', 'utf8'));
 manifest.version = version;
-manifest.download = `https://github.com/${repo}/releases/download/v${version}/module.zip`;
+manifest.download = manifest.download.replace(/\/v[^/]+\/module\.zip$/, `/v${version}/module.zip`);
 fs.writeFileSync('module.json', JSON.stringify(manifest, null, 2) + '\n');
-EOF
+JS
 
 git add module.json
 git commit -m "Release v$version"
 git tag "v$version"
-
-out="$(mktemp -d)"
-# Files marked export-ignore in .gitattributes (tests, tools, design notes) stay out of the zip.
-git archive --format=zip --output="$out/module.zip" "v$version"
-cp module.json "$out/module.json"
-
 git push origin HEAD "v$version"
-gh release create "v$version" "$out/module.zip" "$out/module.json" --repo "$repo" --title "v$version" --generate-notes
-echo "Released v$version"
+echo "Tagged v$version; the Release workflow publishes it."

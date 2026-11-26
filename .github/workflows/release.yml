@@ -1,0 +1,49 @@
+# Publish a release when a version tag (v1.2.3) is pushed: run the tests, build module.json and module.zip
+# (files at the zip's root, without what .gitattributes marks export-ignore) and attach both to a GitHub release.
+# Foundry installs from https://github.com/evanwapowell/ep-cosmere-automations/releases/latest/download/module.json
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test
+        run: node --test
+
+      - name: Build module.json and module.zip
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          node - "$version" "$GITHUB_REPOSITORY" <<'JS'
+          const fs = require('fs');
+          const [version, repo] = process.argv.slice(2);
+          const manifest = JSON.parse(fs.readFileSync('module.json', 'utf8'));
+          manifest.version = version;
+          manifest.manifest = `https://github.com/${repo}/releases/latest/download/module.json`;
+          manifest.download = `https://github.com/${repo}/releases/download/v${version}/module.zip`;
+          fs.writeFileSync('module.json', JSON.stringify(manifest, null, 2) + '\n');
+          JS
+          mkdir dist
+          git archive HEAD | tar -x -C dist
+          cp module.json dist/module.json
+          (cd dist && zip -r ../module.zip .)
+          unzip -l module.zip
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" module.zip module.json \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

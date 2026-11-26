@@ -10,12 +10,13 @@ take a world backup before step 1 if the world matters.
 
 ## 0. Install (Setup screen, admin)
 
-Install Module → Manifest URL:
+Add-on Modules → Install Module → Manifest URL (the module's permanent URL; it always serves the latest release):
 
-    https://raw.githubusercontent.com/evanwapowell/ep-cosmere-automations/ccr-fa029c81-c7h62m/dev-manifest.json
+    https://github.com/evanwapowell/ep-cosmere-automations/releases/latest/download/module.json
 
-It downloads the branch as a zip. To pick up fixes later: Setup → Update the module (or uninstall and reinstall).
-Then launch the world, Manage Modules → enable "EP Cosmere Automations", reload.
+To pick up a fix: the fix is released as a new version (`tools/release.sh 0.3.1` → the Release workflow
+publishes it), then Setup → Add-on Modules → Update. Then launch the world, Manage Modules → enable
+"EP Cosmere Automations", save, reload.
 
 ## 1. Load check (F12 console as GM)
 
