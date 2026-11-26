@@ -14,6 +14,7 @@
  * - mechanics   what the engine changes, by name (see MECHANICS)
  * - links       conditions this one brings with it (removed with it unless something else applied them)
  * - duration    default duration kinds (see scripts/logic/durations.js), used when none is given
+ * - rolls       roll modifiers (see ROLL_RULE below)
  * - phase       the release that automates it; entries for later phases are listed but do nothing yet
  * - handledBy   another module or Foundry core already covers part of it (informational)
  * - outOfScope  not part of the Stormlight rules
@@ -30,6 +31,20 @@ export const MECHANICS = Object.freeze({
     /** +X to one attribute's bonus (skills, movement, senses; not defenses or max resources). Needs a value. */
     ATTRIBUTE_BONUS: 'attributeBonus',
 });
+
+/**
+ * A roll rule: { who, mode, tests }
+ * - who:   'self'   the roller has the condition;
+ *          'target' the roller's (single) target has it.
+ * - mode:  'advantage' | 'disadvantage'
+ * - tests: 'all' | 'attack' | 'melee' | 'ranged' | { skills: [skill ids] }
+ * Situational effects (data/situational.js) add:
+ * - vsTarget: only on a test against the target stored in the effect's value;
+ * - consume:  the effect is used up by the test.
+ */
+export const ROLL_WHO = Object.freeze(['self', 'target']);
+export const ROLL_MODES = Object.freeze(['advantage', 'disadvantage']);
+export const ROLL_TESTS = Object.freeze(['all', 'attack', 'melee', 'ranged']);
 
 export const VALUE_TYPES = Object.freeze({
     DAMAGE: 'damage',
@@ -53,7 +68,7 @@ export const CONDITIONS = Object.freeze([
         summary: 'Cannot see; tests that rely on sight, or against something it cannot sense, often gain a disadvantage.',
         mechanics: [],
         links: [],
-        phase: 3,
+        phase: null,
         handledBy: 'Foundry core (vision)',
     },
     {
@@ -105,6 +120,7 @@ export const CONDITIONS = Object.freeze([
         summary: 'Cannot take reactions, its senses are obscured, and Perception tests gain a disadvantage.',
         mechanics: [],
         links: [],
+        rolls: [{ who: 'self', mode: 'disadvantage', tests: { skills: ['prc'] } }],
         phase: 3,
         handledBy: 'Cosmere Advanced Encounters (reactions)',
     },
@@ -114,6 +130,7 @@ export const CONDITIONS = Object.freeze([
         summary: 'Gains an advantage on every test and refills its Investiture at the start of each of its turns. Ends at the end of the scene.',
         mechanics: [],
         links: [],
+        rolls: [{ who: 'self', mode: 'advantage', tests: 'all' }],
         duration: ['endOfScene'],
         phase: 3,
     },
@@ -144,6 +161,7 @@ export const CONDITIONS = Object.freeze([
         summary: 'Ranged attacks against it gain a disadvantage. If it is knocked Prone while flying, it falls.',
         mechanics: [],
         links: [],
+        rolls: [{ who: 'target', mode: 'disadvantage', tests: 'ranged' }],
         phase: 3,
     },
     {
@@ -160,7 +178,7 @@ export const CONDITIONS = Object.freeze([
         summary: 'Others cannot sense it; attacks against it are harder and its attacks are easier.',
         mechanics: [],
         links: [],
-        phase: 3,
+        phase: null,
         handledBy: 'Foundry core (detection)',
     },
     {
@@ -177,7 +195,7 @@ export const CONDITIONS = Object.freeze([
         summary: 'Cannot be seen; tests against it often gain a disadvantage.',
         mechanics: [],
         links: [],
-        phase: 3,
+        phase: null,
         handledBy: 'Foundry core (detection)',
     },
     {
@@ -186,6 +204,7 @@ export const CONDITIONS = Object.freeze([
         summary: 'Slowed; melee attacks against it gain an advantage. Standing up is free, but its movement is 5 feet lower until its next turn.',
         mechanics: [],
         links: ['slowed'],
+        rolls: [{ who: 'target', mode: 'advantage', tests: 'melee' }],
         phase: 1,
     },
     {
@@ -194,6 +213,7 @@ export const CONDITIONS = Object.freeze([
         summary: 'Its movement rate is 0, and it has a disadvantage on every test except tests to escape.',
         mechanics: [MECHANICS.NO_MOVEMENT],
         links: [],
+        rolls: [{ who: 'self', mode: 'disadvantage', tests: 'all' }],
         phase: 1,
     },
     {

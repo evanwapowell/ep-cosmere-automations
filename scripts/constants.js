@@ -9,6 +9,8 @@ export const FLAGS = Object.freeze({
     SOURCES: 'sources',
     /** Duration state (see scripts/logic/durations.js). */
     DURATION: 'duration',
+    /** Marks a situational effect (Dodging, Bracing, …); holds its id in data/situational.js. */
+    SITUATIONAL: 'situational',
     /** Marks the stance marker effect; holds the talent's system id. */
     STANCE_MARKER: 'stanceMarker',
 });

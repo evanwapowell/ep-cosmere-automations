@@ -77,6 +77,59 @@ class Collection extends Map {
 
 export class Actor {}
 
+const actorsByUuid = new Map();
+
+/**
+ * The system's D20Roll, reduced to what the module touches: `options.advantageMode`, `configureModifiers()` and a
+ * dialog that, like the system's, starts from `data.skillTest.advantageMode` and overwrites the mode with the
+ * player's choice (`globalThis.__dialogChoice`, else whatever it started with).
+ */
+export class D20Roll {
+    constructor(options = {}) {
+        this.options = { ...options };
+        this.configureModifiers();
+    }
+    configureModifiers() {
+        const mode = this.options.advantageMode;
+        this.formula = mode === 'advantage' ? '2d20kh' : mode === 'disadvantage' ? '2d20kl' : '1d20';
+    }
+    async configureDialog(data) {
+        globalThis.__dialogPreset = data?.skillTest?.advantageMode;
+        this.options.advantageMode = globalThis.__dialogChoice ?? data?.skillTest?.advantageMode ?? 'none';
+        this.configureModifiers();
+        return this;
+    }
+}
+
+/** The system's skill test flow: pre-roll hook, dialog unless fast-forwarded, post-roll hook. */
+export async function rollSkill(actor, skill, { fastForward = false, advantageMode = 'none' } = {}) {
+    const roll = new D20Roll({ advantageMode });
+    const config = { data: { context: 'Skill', skill: { id: skill }, source: actor } };
+    Hooks.call('cosmere-rpg.preSkillRoll', roll, actor, config);
+    if (!fastForward) await roll.configureDialog({ skillTest: { data: config.data, parts: [] } });
+    Hooks.callAll('cosmere-rpg.skillRoll', roll, actor, config);
+    await flush();
+    return roll;
+}
+
+/** The system's attack flow: its own dialog (unless fast-forwarded), then a test rolled without a dialog. */
+export async function rollAttack(actor, item, { fastForward = false } = {}) {
+    const options = { actor, skillTest: {} };
+    if (!fastForward) {
+        Hooks.call('cosmere-rpg.preAttackRollConfiguration', options, item);
+        globalThis.__dialogPreset = options.skillTest.advantageMode;
+        if (globalThis.__cancelDialog) return null;
+        options.skillTest.advantageMode = globalThis.__dialogChoice ?? options.skillTest.advantageMode ?? 'none';
+        Hooks.callAll('cosmere-rpg.attackRollConfiguration', options, item);
+    }
+    const roll = new D20Roll({ advantageMode: options.skillTest.advantageMode ?? 'none' });
+    const config = { actor, data: { context: 'Attack', skill: { id: item.system.skill }, source: item } };
+    Hooks.call('cosmere-rpg.preAttackRoll', roll, item, config);
+    Hooks.callAll('cosmere-rpg.attackRoll', roll, item, config);
+    await flush();
+    return roll;
+}
+
 export class FakeEffect {
     constructor(data, parent) {
         this.parent = parent;
@@ -97,6 +150,9 @@ export class FakeEffect {
     }
     get documentName() {
         return 'ActiveEffect';
+    }
+    get isOwner() {
+        return this.parent?.isOwner ?? true;
     }
     getFlag(scope, key) {
         return getProperty(this.flags, `${scope}.${key}`);
@@ -160,6 +216,7 @@ export class FakeActor extends Actor {
         this.uuid = `Actor.${this.id}`;
         this.hasPlayerOwner = hasPlayerOwner;
         this.isOwner = true;
+        actorsByUuid.set(this.uuid, this);
         this.speed = speed;
         this.skillIds = skills;
         this.effects = new Collection();
@@ -301,7 +358,10 @@ export class FakeCombat {
     }
 }
 
-const STATUS_IDS = ['afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious', 'stunned', 'surprised'];
+const STATUS_IDS = [
+    'afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious', 'stunned',
+    'surprised', 'empowered', 'disoriented', 'flying',
+];
 
 /** Install the globals. Returns handles the tests use. */
 export function installFakeFoundry({ settings: overrides = {} } = {}) {
@@ -310,10 +370,13 @@ export function installFakeFoundry({ settings: overrides = {} } = {}) {
     const warnings = [];
     const module = { id: 'ep-cosmere-automations' };
 
+    const socket = { emitted: [], handlers: [], on(ch, fn) { this.handlers.push(fn); }, emit(ch, msg) { this.emitted.push(msg); } };
     Object.assign(globalThis, {
         Hooks,
         Actor,
+        fromUuidSync: (uuid) => actorsByUuid.get(uuid) ?? null,
         CONFIG: {
+            Dice: { rolls: [D20Roll] },
             Actor: { documentClass: FakeActor },
             ActiveEffect: { documentClass: FakeEffect },
             statusEffects: STATUS_IDS.map((id) => ({
@@ -352,7 +415,9 @@ export function installFakeFoundry({ settings: overrides = {} } = {}) {
         },
         game: {
             system: { id: 'cosmere-rpg' },
-            user: { id: 'u1', isGM: true },
+            user: { id: 'u1', isGM: true, targets: new Set() },
+            release: { generation: 13 },
+            socket,
             users: [],
             actors: [],
             scenes: [],
@@ -373,5 +438,5 @@ export function installFakeFoundry({ settings: overrides = {} } = {}) {
         },
     });
 
-    return { settings, chat, warnings, module };
+    return { settings, chat, warnings, module, socket };
 }

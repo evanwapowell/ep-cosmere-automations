@@ -26,6 +26,8 @@ export const KINDS = Object.freeze({
     END_OF_TURN: 'endOfTurn',
     /** Until the end of the owner's next turn (a turn that starts after the effect was applied). */
     END_OF_NEXT_TURN: 'endOfNextTurn',
+    /** Until the end of the turn in progress, whoever's it is (Dodge: the attack it answers). */
+    END_OF_CURRENT_TURN: 'endOfCurrentTurn',
     /** Until the end of the scene. */
     END_OF_SCENE: 'endOfScene',
     /** Until the owner's next long rest. */
@@ -44,6 +46,7 @@ export const COMBAT_KINDS = Object.freeze([
     KINDS.START_OF_NEXT_TURN,
     KINDS.END_OF_TURN,
     KINDS.END_OF_NEXT_TURN,
+    KINDS.END_OF_CURRENT_TURN,
 ]);
 
 /** Combat phases in turn order (handbook: fast PCs, fast NPCs, slow PCs, slow NPCs). */
@@ -136,6 +139,7 @@ export function advance(state, event) {
             break;
         }
         case 'turnEnd': {
+            if (has(KINDS.END_OF_CURRENT_TURN)) return done(KINDS.END_OF_CURRENT_TURN);
             if (isOwner && has(KINDS.END_OF_TURN)) return done(KINDS.END_OF_TURN);
             if (isOwner && has(KINDS.END_OF_NEXT_TURN) && state.turnStarted) return done(KINDS.END_OF_NEXT_TURN);
             break;
@@ -207,6 +211,8 @@ export function describeDuration(state, { owner } = {}) {
                 return `until the end of ${whose} turn`;
             case KINDS.END_OF_NEXT_TURN:
                 return `until the end of ${whose} next turn`;
+            case KINDS.END_OF_CURRENT_TURN:
+                return 'until the end of the current turn';
             case KINDS.END_OF_SCENE:
                 return 'until the end of the scene';
             case KINDS.LONG_REST:

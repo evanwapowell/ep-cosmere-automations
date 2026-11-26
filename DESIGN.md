@@ -12,8 +12,8 @@ conditions.
   effects", is in its backlog with no date, so we build it here.
 - **Who it's for:** any table using the system, played by hand. It also exposes an API that a GM helper module
   (`claude-gm-tools`) can call.
-- **Status:** phases 1 and 2 written (2026-11-26): unit-tested in Node against a fake Foundry, **not yet tried in
-  a live world**. See "Phase 1 as built" and "Phase 2 as built".
+- **Status:** phases 1–3 written (2026-11-26): unit-tested in Node against a fake Foundry, **not yet tried in a
+  live world**. See "Phase 1 as built", "Phase 2 as built" and "Phase 3 as built".
 
 ## Ground rules
 
@@ -62,7 +62,18 @@ formulas read `@attr.<id>` = `value` only; source checked 2026-11-26),
   **before** evaluation; the `D20Roll` is already built, so set `roll.options.advantageMode` and call
   `roll.configureModifiers()` to rebuild the d20, or add terms. The source marks this argument "TEMP: Workaround".
 - `cosmere-rpg.pre<Context>RollConfiguration` and `cosmere-rpg.preAttackRollConfiguration(options, item)` fire only
-  when the roll dialog opens (not on fast-forward): use them to pre-select the dialog's buttons.
+  when the roll dialog opens (not on fast-forward).
+- **The skill/item roll dialog ignores the roll's mode** (source checked 2026-11-26): `d20Roll` builds the roll,
+  fires `pre<Context>Roll`, then calls `roll.configureDialog({skillTest: {data, parts}})` without an
+  `advantageMode`; the dialog starts at "none" and its result **overwrites** `roll.options.advantageMode`. So a
+  mode set in `preSkillRoll` survives only fast-forwarded rolls. Changing `config` in `preSkillRollConfiguration`
+  doesn't reach the dialog either.
+- **The attack dialog does start from `options.skillTest.advantageMode`**, which
+  `preAttackRollConfiguration(options, item)` can set. After it, the attack's test is rolled with
+  `configurable: false`, so `preAttackRoll` fires again for the same attack (with the dialog's result).
+- Roll contexts: `Skill` (source = actor), `Item` and `Attack` (source = item; `data.skill.id` set). An item's
+  test includes the skill's `mod.bonus` even with another attribute. Attack type: `item.system.attack.type`
+  (`melee` / `ranged`). Basic action ids: `dodge` (reaction), `brace`, `gain_advantage`.
 - `cosmere-rpg.skillRoll` / `attackRoll` fire **after** evaluation (too late to change the total).
 - `cosmere-rpg.preDamageRoll(roll, source, config)` before a damage roll is evaluated.
 - `actor.rollSkill()` uses `skill.mod.value` (so `mod.bonus` counts), **except** when the test is rolled with
@@ -278,11 +289,10 @@ command die to their own d20. Other Leader talents use the die in other ways.
 What it needs, beyond what the plan already has:
 1. **Applying an effect to another player's actor.** Phase 1 does all work on the client of the user who acted,
    which only ever touches their own actor. A player cannot create effects on another player's character, so a
-   granted buff goes through a **GM relay**: the acting client sends a socket request (`module.ep-cosmere-automations`,
-   declared with `"socket": true` in the manifest) and the active GM's client creates the effect, after checking
-   the request (the sender owns the granting actor, the target is a valid actor, the buff is in the table). The API
-   uses the same relay. This also serves later effects one actor puts on another (Dodged on an attacker, Gain
-   Advantage tied to a target).
+   granted buff goes through the **GM relay** (built in phase 3 for using up a target's Dodging): the acting client
+   sends a socket request (`module.ep-cosmere-automations`) and the active GM's client creates the effect, after
+   checking the request (the sender owns the granting actor, the target is a valid actor, the buff is in the table).
+   The relay gains a second request type, "grant".
 2. **Combined durations ("whichever comes first"):** *until used* **or** *until the end of the target's next turn*.
    Durations are a list of kinds, and the first one to trigger ends the effect (built in phase 2).
 3. **Adding a die, not advantage.** In the roll layer, a `preSkillRoll` / `preAttackRoll` handler on the roller's
@@ -323,7 +333,7 @@ Each phase is a release that works on its own. Turn conditions on one at a time,
 | 0. Checks (no code) | In the world on a `zz` scene: does Automated Actions' Exhausted setting change totals? How does Automated Actions apply Enhanced and Empowered? Do Advanced Encounters and the token ruler read `movement.walk.rate.value` (so Slowed and Immobilized show up there)? Does Foundry v13 remove expired effects by itself? *(The question "does a toggled status keep changes added to `CONFIG.statusEffects`" no longer matters: phase 1 doesn't use that.)* | 1–2 h |
 | 1. Core | Skeleton and settings; the condition table; static mechanics (Exhausted, Slowed, Immobilized, Restrained, Unconscious, Enhanced); links (Prone → Slowed, Unconscious → Prone); sources; apply dialog for values; chat lines; API; **stances (4.5)** | 14–20 h (code written: see "Phase 1 as built") |
 | 2. Durations | The duration kinds, expiry on turn start/end, round start, combat end, rest; chat line on expiry; at the end of a scene also recharge per-scene item uses (Recover) | 7–12 h (code written: see "Phase 2 as built") |
-| 3. Roll layer | Advantage/disadvantage from conditions and situational effects (Dodge, Brace, Gain Advantage, Prone, Restrained, Empowered, Disoriented, Flying, Flamestance); flavor line; dialog pre-selection | 8–12 h |
+| 3. Roll layer | Advantage/disadvantage from conditions and situational effects (Dodge, Brace, Gain Advantage, Prone, Restrained, Empowered, Disoriented, Flying, Flamestance); flavor line; dialog pre-selection | 8–12 h (code written: see "Phase 3 as built") |
 | 4. Triggers | Afflicted ticks, Determined button, Surprised fast-turn block, Empowered refill, 0 health → Unconscious + injury roll + injury condition, Steady Aim damage, Focused cost | 10–14 h |
 | 5. Reactive Strike reminder (4.6) | | 6–10 h |
 | 3b. Granted buffs | GM relay (socket); Decisive Command (give, use up on the next test, expire at end of next turn); command die size; Confident/Demonstrative Command reminders, then dialog checkbox | 4–8 h |
@@ -441,6 +451,47 @@ What the code does, and where it differs from the plan above.
   this phase next round" during a slow PC turn ends when the first slow PC starts next round; Surprised on an NPC at
   the start of combat ends after its first turn; End Combat ends a stance and refills Recover; a long rest takes one
   Exhausted stack. Check that only one chat line appears per event with two GMs logged in.
+
+## Phase 3 as built (roll layer)
+
+- **Rules are data:** conditions carry `rolls: [{who: 'self' | 'target', mode, tests}]` with `tests` = `all`,
+  `attack`, `melee`, `ranged` or `{skills: [...]}`. Restrained (self, all, disadvantage), Empowered (self, all,
+  advantage), Disoriented (self, Perception, disadvantage), Prone (target, melee, advantage), Flying (target, ranged,
+  disadvantage). Situational effects live in `data/situational.js`: Dodging (target, attacks, disadvantage, used
+  up; until used or the end of the current turn), Bracing (target, attacks, disadvantage; ends when the bracer
+  attacks or moves; "only from the other side of the cover" is the GM's call, through the dialog), Advantage gained
+  (self, any test against the stored enemy, used up), Flamestance (Intimidation advantage while in the stance).
+- **Netting:** the caller's own choice (shift-click, macro) counts as one; each active modifier adds or removes
+  one; the sign decides the mode. Several instances of one condition count once.
+- **Target:** the roller's single targeted token (none or several: target-side rules are skipped).
+- **Reaching the dice:** `pre<Skill|Item|Attack>Roll` sets the mode and calls `roll.configureModifiers()`;
+  `D20Roll.prototype.configureDialog` is wrapped to pass that mode to the dialog as its starting value (the player
+  sees it selected and can change it, e.g. Restrained on an escape test); attacks are pre-selected in
+  `preAttackRollConfiguration`, and the following `preAttackRoll` only records the note (only for a dialog the
+  player submitted within the last minute, so a cancelled dialog doesn't affect the next fast-forwarded attack).
+- **The card:** the roll carries `options['ep-cosmere-automations'].note` ("Advantage: target Prone. Disadvantage:
+  Restrained."), shown at the top of the chat card by a `renderChatMessageHTML` handler.
+- **Using up:** after the roll (`<skill|item|attack>Roll`), effects used by it are deleted, through the **GM relay**
+  (module socket, `"socket": true`) when the roller doesn't own them (a player's attack using up an NPC's
+  Dodging). The GM side accepts only "use up this situational effect that has a used-up rule".
+- **Action effects:** using Dodge or Brace puts Dodging / Bracing on the user's token. Gain Advantage needs one
+  target and posts a card with a "The test succeeded" button; the button (for the actor's owners) creates Advantage
+  gained against that enemy.
+- **Modes:** "Advantage and disadvantage on tests" full / remind / off (remind by default: the card lists what
+  would apply, the roll is unchanged); a condition's modifiers also need that condition's own setting at full.
+  "Effects from Dodge, Brace and Gain Advantage" full / remind / off (remind by default).
+- **API:** `mark(actor, 'dodging' | 'bracing' | 'advantage', {target, duration})`, `marks(actor)`,
+  `modifiers(actor, {target, context, skill, attackType})` (preview without rolling).
+- **Not built / known gaps:** Gain Advantage's "a different skill from the test that gained it" is shown in the
+  effect's text, not enforced; Blind/Hidden/Invisible are left to Foundry's vision (no roll rule); an advantage
+  is always put on the d20 (the rules also allow the plot die: the player can move it in the dialog); a skill test
+  rolled with another attribute still skips Exhausted (a system behavior); the `renderChatMessageHTML` note and the
+  token-controls button are the parts most likely to need a fix in a live world.
+- **To try live** (rolls and action effects set to full; Restrained, Prone set to full): a Restrained character's
+  Athletics test opens with disadvantage selected; a sword attack on a Prone target opens with advantage, a bow
+  attack doesn't; a player's attack on an NPC who used Dodge rolls with disadvantage and removes Dodging (GM logged
+  in, player attacking); Brace then move the token: Bracing ends; Gain Advantage with a target, press the button,
+  then a test against that target has an advantage once; the chat card shows the reason line.
 
 ## Development
 

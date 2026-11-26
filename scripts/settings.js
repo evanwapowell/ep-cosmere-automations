@@ -12,6 +12,8 @@ export const SETTINGS = Object.freeze({
     ASK_DURATION: 'askDuration',
     COMBAT_ENDS_SCENE: 'combatEndsScene',
     SCENE_RECHARGE: 'sceneRecharge',
+    ROLLS: 'rolls',
+    ACTION_EFFECTS: 'actionEffects',
     conditionKey: (id) => `condition.${id}`,
 });
 
@@ -125,6 +127,34 @@ export function registerSettings() {
         default: MODES.REMIND,
     });
 
+    game.settings.register(MODULE_ID, SETTINGS.ROLLS, {
+        name: t('settings.rolls.name', null, 'Advantage and disadvantage on tests'),
+        hint: t(
+            'settings.rolls.hint',
+            null,
+            "Full: conditions and situational effects (yours and your target's) set the test's advantage or disadvantage; the roll dialog starts with it selected, so the player can change it. Remind: the chat card lists them, the roll is unchanged. Each condition's own setting must also be full.",
+        ),
+        scope: 'world',
+        config: true,
+        type: String,
+        choices: modeChoices(),
+        default: MODES.REMIND,
+    });
+
+    game.settings.register(MODULE_ID, SETTINGS.ACTION_EFFECTS, {
+        name: t('settings.actionEffects.name', null, 'Effects from Dodge, Brace and Gain Advantage'),
+        hint: t(
+            'settings.actionEffects.hint',
+            null,
+            'Full: using these actions puts their effect on the token (Gain Advantage after the player confirms success), and the roll layer reads it. Remind: a chat line only.',
+        ),
+        scope: 'world',
+        config: true,
+        type: String,
+        choices: modeChoices(),
+        default: MODES.REMIND,
+    });
+
     for (const entry of AUTOMATED_CONDITIONS) {
         game.settings.register(MODULE_ID, SETTINGS.conditionKey(entry.id), {
             name: t('settings.condition.name', { name: entry.name }, `Condition: ${entry.name}`),
@@ -163,6 +193,13 @@ export function conditionMode(id) {
 
 export function stanceMode() {
     return featureMode(SETTINGS.STANCES);
+}
+
+const MODE_ORDER = [MODES.OFF, MODES.REMIND, MODES.FULL];
+
+/** The weaker of two modes (off < remind < full). */
+export function weakerMode(a, b) {
+    return MODE_ORDER[Math.min(MODE_ORDER.indexOf(a), MODE_ORDER.indexOf(b))] ?? MODES.OFF;
 }
 
 /** Mode of a world-level feature setting ('durations', 'sceneRecharge'). */

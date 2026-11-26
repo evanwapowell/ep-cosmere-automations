@@ -47,6 +47,14 @@
       "sceneRecharge": {
         "name": "Recharge per-scene uses at the end of a scene",
         "hint": "Items whose uses recharge per scene (such as Recover) get them back."
+      },
+      "rolls": {
+        "name": "Advantage and disadvantage on tests",
+        "hint": "Full: conditions and situational effects (yours and your target's) set the test's advantage or disadvantage; the roll dialog starts with it selected, so the player can change it. Remind: the chat card lists them, the roll is unchanged. Each condition's own setting must also be full."
+      },
+      "actionEffects": {
+        "name": "Effects from Dodge, Brace and Gain Advantage",
+        "hint": "Full: using these actions puts their effect on the token (Gain Advantage after the player confirms success), and the roll layer reads it. Remind: a chat line only."
       }
     },
     "chat": {
@@ -67,7 +75,12 @@
       "exhaustionRemindHint": "Exhausted goes down by 1.",
       "stanceSceneEnd": "{actor}'s stance ends with the scene.",
       "recharged": "{actor} recharges {items}.",
-      "rechargeRemind": "{actor} can recharge {items} (end of scene)."
+      "rechargeRemind": "{actor} can recharge {items} (end of scene).",
+      "grantAsk": "{actor} tries to gain the advantage over {target}.",
+      "grantButton": "The test succeeded",
+      "situational": "{actor}: {effect}.",
+      "situationalRemind": "{actor}: {effect}.",
+      "situationalEnded": "{actor}'s {effect} ends ({reason})."
     },
     "dialog": {
       "amount": "Damage",
@@ -80,13 +93,18 @@
       "duration": "Lasts"
     },
     "notify": {
-      "immune": "{actor} is immune to {condition}."
+      "immune": "{actor} is immune to {condition}.",
+      "needsTarget": "{action}: target one enemy to track the advantage.",
+      "noGM": "No GM is connected to remove {effect}; remove it by hand."
     },
     "effect": {
       "stance": "Stance: {stance}"
     },
     "reason": {
-      "longRest": "long rest"
+      "longRest": "long rest",
+      "attacked": "it attacked",
+      "moved": "it moved",
+      "used": "used"
     },
     "controls": {
       "endScene": "End scene (EP Cosmere Automations)"

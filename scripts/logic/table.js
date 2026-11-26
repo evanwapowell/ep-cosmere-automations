@@ -3,9 +3,10 @@
  */
 import { MECHANICS, VALUE_TYPES } from '../../data/conditions.js';
 import { parseDurationSpec } from './durations.js';
+import { ruleError } from './rolls.js';
 
 /** The highest phase this release implements. */
-export const RELEASE_PHASE = 2;
+export const RELEASE_PHASE = 3;
 
 const KNOWN_MECHANICS = new Set(Object.values(MECHANICS));
 const KNOWN_VALUE_TYPES = new Set(Object.values(VALUE_TYPES));
@@ -48,6 +49,11 @@ export function validateTable(table) {
         if (entry.duration != null) {
             const parsed = parseDurationSpec(entry.duration);
             if (!parsed.ok) errors.push(`${entry.id}: ${parsed.error}`);
+        }
+        for (const rule of entry.rolls ?? []) {
+            const error = ruleError(rule);
+            if (error) errors.push(`${entry.id}: roll rule: ${error}`);
+            else if (rule.consume || rule.vsTarget) errors.push(`${entry.id}: consume/vsTarget are for situational effects`);
         }
     }
 
@@ -129,4 +135,44 @@ export function conditionIdOf(statuses, byId) {
     const list = [...(statuses ?? [])];
     if (list.length !== 1) return null;
     return byId[list[0]] ? list[0] : null;
+}
+
+/**
+ * Check the situational-effects table. Returns a list of problems (empty when valid).
+ * @param {object[]} table
+ * @param {Set<string>} [conditionIds] ids already used by conditions (must not clash)
+ */
+export function validateSituational(table, conditionIds = new Set()) {
+    const errors = [];
+    const ids = new Set();
+    const actions = new Set();
+    for (const entry of table) {
+        if (!entry?.id) {
+            errors.push('situational entry without an id');
+            continue;
+        }
+        if (ids.has(entry.id) || conditionIds.has(entry.id)) errors.push(`${entry.id}: duplicate id`);
+        ids.add(entry.id);
+        if (!entry.name || !entry.summary) errors.push(`${entry.id}: missing name or summary`);
+        if (!!entry.action === !!entry.stance) errors.push(`${entry.id}: needs exactly one of action or stance`);
+        if (entry.action) {
+            if (actions.has(entry.action)) errors.push(`${entry.id}: action "${entry.action}" used twice`);
+            actions.add(entry.action);
+        }
+        if (!Array.isArray(entry.rolls) || !entry.rolls.length) errors.push(`${entry.id}: no roll rules`);
+        for (const rule of entry.rolls ?? []) {
+            const error = ruleError(rule);
+            if (error) errors.push(`${entry.id}: roll rule: ${error}`);
+            if (rule.vsTarget && !entry.needsTarget) errors.push(`${entry.id}: vsTarget needs needsTarget`);
+        }
+        if (entry.duration != null) {
+            const parsed = parseDurationSpec(entry.duration);
+            if (!parsed.ok) errors.push(`${entry.id}: ${parsed.error}`);
+        }
+        for (const end of entry.endsWhen ?? []) {
+            if (!['attack', 'move'].includes(end)) errors.push(`${entry.id}: unknown endsWhen "${end}"`);
+        }
+        if (entry.stance && (entry.duration || entry.endsWhen)) errors.push(`${entry.id}: a stance rule has no duration`);
+    }
+    return errors;
 }

@@ -11,6 +11,11 @@ import { addSource, describeSources, effectKey, itemKey, MANUAL, readSources } f
 import { normalizeValue } from './logic/values.js';
 import { conditionMode } from './settings.js';
 import { endStance, syncStanceMarker } from './stances.js';
+import { createSituational, situationalEffects } from './situational.js';
+import { sideOf } from './rolls.js';
+import { collectModifiers, netMode } from './logic/rolls.js';
+import { SITUATIONAL, SITUATIONAL_BY_ID } from '../data/situational.js';
+import { SETTINGS, featureMode, weakerMode } from './settings.js';
 import { systemChoices } from './util.js';
 
 /**
@@ -142,6 +147,42 @@ function list(actor) {
     });
 }
 
+/**
+ * Put a situational effect on an actor: 'dodging', 'bracing', or 'advantage' (needs `target`).
+ * @param {Actor} actor
+ * @param {string} id
+ * @param {{target?: Actor, duration?: unknown}} [options]
+ */
+function mark(actor, id, { target, duration } = {}) {
+    return createSituational(actor, id, { target, duration });
+}
+
+/** The actor's situational effects: [{id, name, value, lasts}]. */
+function marks(actor) {
+    return situationalEffects(actor).map(({ id, value, effect }) => ({
+        id,
+        effectId: effect.id,
+        name: effect.name,
+        value,
+        lasts: durationText(effect),
+    }));
+}
+
+/**
+ * Preview the advantages and disadvantages a test would get, without rolling.
+ * @param {Actor} actor the roller
+ * @param {{target?: Actor, context?: 'Skill' | 'Item' | 'Attack', skill?: string, attackType?: 'melee' | 'ranged', base?: string}} [test]
+ */
+function modifiers(actor, { target = null, context = 'Skill', skill = null, attackType = null, base = 'none' } = {}) {
+    const rolls = featureMode(SETTINGS.ROLLS);
+    const modeOf = (key) => (key.startsWith('situational:') ? rolls : weakerMode(rolls, conditionMode(key)));
+    const mods = collectModifiers(
+        { roller: sideOf(actor), target: sideOf(target), test: { context, skill, attackType } },
+        { conditions: CONDITIONS_BY_ID, situational: SITUATIONAL_BY_ID, modeOf },
+    );
+    return { modifiers: mods, mode: netMode(base, mods) };
+}
+
 export function buildApi() {
     return Object.freeze({
         apply,
@@ -154,6 +195,10 @@ export function buildApi() {
         advanceDays,
         setDuration,
         use: useUp,
+        mark,
+        marks,
+        modifiers,
         conditions: CONDITIONS,
+        situational: SITUATIONAL,
     });
 }
