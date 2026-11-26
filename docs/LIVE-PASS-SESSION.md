@@ -1,5 +1,21 @@
 # Live pass: prompt for a Claude Code session on your computer
 
+## Before anything: publish release v0.3.0 (once, about a minute)
+
+The install URL serves the latest GitHub release, and none exists yet. On github.com:
+
+1. Open https://github.com/evanwapowell/ep-cosmere-automations/releases/new
+2. **Choose a tag** → type `v0.3.0` → "Create new tag: v0.3.0 on publish".
+3. **Target** → branch `ccr-fa029c81-c7h62m` (not main: the code isn't merged yet).
+4. Title `v0.3.0`; leave "Set as the latest release" ticked; **Publish release**.
+5. Open the repo's **Actions** tab: the "Release" workflow runs the tests and attaches `module.json` and
+   `module.zip` to the release (1–2 minutes). When it's green, the install URL works:
+   `https://github.com/evanwapowell/ep-cosmere-automations/releases/latest/download/module.json`
+
+(Or from a terminal in your clone: `git fetch origin && git tag v0.3.0 origin/ccr-fa029c81-c7h62m && git push origin v0.3.0`.)
+
+## Starting the session
+
 How to use: open Claude Code on the computer whose browser is signed in to Foundry (desktop app → Code, or
 `claude` in a terminal) **in your local clone of this repository**, then paste everything below the line as the
 first message. The session needs browser control (Claude in Chrome or the desktop app's browser), as last time.
