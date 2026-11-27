@@ -682,6 +682,22 @@ already change which table behaviour applies. The following steps (#4 to #6) wid
 
 **Step 3 (#4) widened the mechanics layer** ("Mechanics from any effect", below).
 
+**Step 5 (#6) made links and the long-rest step work for any effect.** An effect that isn't a table condition
+(a talent's, an item's, a homebrew "Pinned" with `links: ['immobilized']`) brings its linked conditions when it is
+created and takes them away when it is deleted, with the effect (id and name) as the source. Such an effect has no
+setting of its own, so linking follows the engine's master switch only (a disabled effect brings nothing, and
+enabling one later brings nothing yet); a table condition still follows its own setting. A long rest takes `longRest`
+stacks off any effect whose resolved rules have it, except stacks a source holds; an effect that doesn't stack has
+one, so one step ends it. A table condition follows its own setting for this; any other effect follows the
+durations setting (full ends it, remind says so, off leaves it) and is skipped while disabled. Both are interim,
+until "Rules on other effects" decides modes for effects that aren't conditions (#4, #5).
+**Loops:** the table is checked for link cycles when it loads, but an effect's own rules can make one the table check
+can't see. A link the engine creates carries the chain of links being followed in the options of its creation
+(`engine.chain`); `planLinks` (`scripts/logic/sources.js`) skips a link whose condition is already in the chain (it
+would make two effects hold each other) and stops a chain at `MAX_LINK_DEPTH` (6, the effect that started it
+included; the table's own chains are three deep). Either stop warns once, in the console and as a notification.
+Links still name table conditions only.
+
 ### The shape
 
 An effect's own rules are plain data in `flags['ep-cosmere-automations'].rules`:

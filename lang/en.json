@@ -109,7 +109,9 @@
       "immune": "{actor} is immune to {condition}.",
       "needsTarget": "{action}: target one enemy to track the advantage.",
       "noGM": "No GM is connected to remove {effect}; remove it by hand.",
-      "held": "{actor}: {condition} comes from {source}. Remove that first."
+      "held": "{actor}: {condition} comes from {source}. Remove that first.",
+      "linkLoop": "{actor}: {parent} would bring {condition}, which is already being applied here. Not linked again; check the rules of these effects for a loop.",
+      "linkDepth": "{actor}: the links from {parent} to {condition} go too deep. Stopped; check the rules of these effects for a loop."
     },
     "effect": {
       "stance": "Stance: {stance}"

@@ -14,6 +14,7 @@ import {
     holders,
     isSourceGone,
     MANUAL,
+    planLinks,
     planSourceRemoval,
     readSources,
 } from './logic/sources.js';
@@ -23,7 +24,7 @@ import { defaultDuration } from './logic/rules.js';
 import { rulesOf } from './rules.js';
 import { buildDuration, durationText, shouldAskDuration } from './durations.js';
 import { conditionMode, engineEnabled, featureMode, SETTINGS } from './settings.js';
-import { actorName, esc, safe, serial, statusLabel, t } from './util.js';
+import { actorName, esc, safe, serial, statusLabel, t, warn } from './util.js';
 import { askDetails } from './values.js';
 
 export function registerConditionHooks() {
@@ -54,8 +55,11 @@ function storedSources(effect) {
     return effect.getFlag(MODULE_ID, FLAGS.SOURCES);
 }
 
-function engineOptions(reason) {
-    return { [MODULE_ID]: { [OPTION_KEYS.ENGINE]: { reason: reason ?? '' } } };
+/** Options marking a change as the engine's own. `chain`: the links being followed (see `planLinks`). */
+function engineOptions(reason, chain) {
+    const engine = { reason: reason ?? '' };
+    if (chain?.length) engine.chain = chain;
+    return { [MODULE_ID]: { [OPTION_KEYS.ENGINE]: engine } };
 }
 
 /**
@@ -63,10 +67,11 @@ function engineOptions(reason) {
  * @param {Actor} actor
  * @param {string} id
  * @param {{value?: object, sources?: {key: string, label: string}[], stacks?: number, extraInstance?: boolean,
- *   duration?: object | null, reason?: string}} [options] duration: a stored duration state (null: none)
+ *   duration?: object | null, reason?: string, chain?: string[]}} [options] duration: a stored duration state
+ *   (null: none); chain: the links being followed, so a loop through effects' own rules stops
  * @returns {Promise<ActiveEffect | null>}
  */
-export async function createCondition(actor, id, { value, sources, stacks, extraInstance, duration, reason } = {}) {
+export async function createCondition(actor, id, { value, sources, stacks, extraInstance, duration, reason, chain } = {}) {
     if (actor?.system?.immunities?.condition?.[id]) {
         ui.notifications.warn(
             t('notify.immune', { actor: actorName(actor), condition: statusLabel(id) }, '{actor} is immune to {condition}.'),
@@ -81,16 +86,16 @@ export async function createCondition(actor, id, { value, sources, stacks, extra
     foundry.utils.setProperty(data, `flags.${MODULE_ID}.${FLAGS.SOURCES}`, sources ?? [{ ...MANUAL }]);
     if (value) foundry.utils.setProperty(data, `flags.${MODULE_ID}.${FLAGS.VALUE}`, value);
     if (duration) foundry.utils.setProperty(data, `flags.${MODULE_ID}.${FLAGS.DURATION}`, duration);
-    return cls.create(data, { parent: actor, keepId: true, ...engineOptions(reason) });
+    return cls.create(data, { parent: actor, keepId: true, ...engineOptions(reason, chain) });
 }
 
 /**
  * Make sure a linked condition is on the actor, with `source` among its sources.
  * A condition already there without our flags was applied by hand: it keeps a manual source.
  */
-async function ensureLinked(actor, id, source) {
+async function ensureLinked(actor, id, source, chain) {
     const existing = conditionEffects(actor, id)[0];
-    if (!existing) return createCondition(actor, id, { sources: [source], reason: source.label });
+    if (!existing) return createCondition(actor, id, { sources: [source], reason: source.label, chain });
     const current = readSources(storedSources(existing));
     const next = addSource(current, source);
     if (next.length !== current.length || !Array.isArray(storedSources(existing))) {
@@ -104,7 +109,7 @@ async function onCreate(effect, options, userId) {
     const actor = effect.parent;
     if (!(actor instanceof Actor)) return;
     const id = conditionIdOf(effect.statuses, CONDITIONS_BY_ID);
-    if (!id) return;
+    if (!id) return linkOther(effect, actor, options);
     const mode = conditionMode(id);
     if (mode === MODES.OFF) return;
     const entry = CONDITIONS_BY_ID[id];
@@ -141,14 +146,49 @@ async function onCreate(effect, options, userId) {
         { reminder, detail: effect.getFlag(MODULE_ID, FLAGS.DURATION) ? durationText(effect) : undefined },
     );
 
-    if (mode === MODES.FULL && rules.links?.length) {
-        await serial(actor.uuid, async () => {
-            for (const link of rules.links) {
-                if (!actor.effects.has(effect.id)) break; // removed meanwhile
-                await ensureLinked(actor, link, { key: effectKey(effect.id), label: plainName(entry.id) });
-            }
-        });
-    }
+    if (mode === MODES.FULL) await applyLinks(effect, actor, options, rules.links, { chainKey: id, label: plainName(id) });
+}
+
+/**
+ * An effect that isn't a table condition (a talent's, an item's, a homebrew "Pinned") can bring conditions with it
+ * too, when its resolved rules have `links`. It has no setting of its own, so this follows the engine's master
+ * switch only; the linked conditions end with it like a table condition's do. A disabled effect brings nothing.
+ */
+async function linkOther(effect, actor, options) {
+    if (effect.disabled) return;
+    const links = rulesOf(effect).links;
+    if (!links?.length) return;
+    await applyLinks(effect, actor, options, links, { chainKey: effectKey(effect.id), label: effect.name || effect.id });
+}
+
+/**
+ * Put an effect's linked conditions on the actor, each with the effect as a source.
+ * `chainKey` names the effect in the chain of links being followed: a created link carries the chain in the options
+ * of its own creation, so a condition already being applied higher up is not linked again, and a chain has a depth
+ * limit (`planLinks`). Either way the engine stops with a warning.
+ */
+async function applyLinks(effect, actor, options, links, { chainKey, label }) {
+    if (!links?.length) return;
+    const chain = [...(options?.[MODULE_ID]?.[OPTION_KEYS.ENGINE]?.chain ?? []), chainKey];
+    const { apply, skipped } = planLinks(chain, links);
+    for (const { id, reason } of skipped) warnLinkStopped(actor, label, id, reason);
+    if (!apply.length) return;
+    await serial(actor.uuid, async () => {
+        for (const link of apply) {
+            if (!actor.effects.has(effect.id)) break; // removed meanwhile
+            await ensureLinked(actor, link, { key: effectKey(effect.id), label }, chain);
+        }
+    });
+}
+
+function warnLinkStopped(actor, parent, id, reason) {
+    const data = { actor: actorName(actor), parent, condition: statusLabel(id, CONDITIONS_BY_ID[id]?.name) };
+    const message =
+        reason === 'loop'
+            ? t('notify.linkLoop', data, '{actor}: {parent} would bring {condition}, which is already being applied here. Not linked again; check the rules of these effects for a loop.')
+            : t('notify.linkDepth', data, '{actor}: the links from {parent} to {condition} go too deep. Stopped; check the rules of these effects for a loop.');
+    warn(message);
+    ui.notifications?.warn(message);
 }
 
 /**

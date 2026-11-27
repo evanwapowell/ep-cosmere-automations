@@ -109,6 +109,32 @@ export function removeSource(sources, key) {
 export const effectKey = (id) => `effect:${id}`;
 export const itemKey = (id) => `item:${id}`;
 
+/** The longest chain of links the engine follows (the effect that started it counts as the first). The table's own
+ * chains are three deep (Unconscious → Prone → Slowed); anything longer is a loop or a mistake. */
+export const MAX_LINK_DEPTH = 6;
+
+/**
+ * Which of an effect's links to apply now. The table is checked for cycles when it loads, but an effect's own rules
+ * can link to a condition whose own rules link back, so the engine also guards at run time: a link whose condition
+ * is already being applied higher up the chain is not followed (it would make two effects hold each other), and a
+ * chain stops at `maxDepth`.
+ * @param {string[]} chain what the engine is applying right now, root first, ending with the effect whose links
+ *   these are: a table condition's id, or `effect:<id>` for any other effect
+ * @param {string[]} links condition ids from the effect's resolved rules
+ * @param {number} [maxDepth]
+ * @returns {{apply: string[], skipped: {id: string, reason: 'loop' | 'depth'}[]}}
+ */
+export function planLinks(chain, links, maxDepth = MAX_LINK_DEPTH) {
+    const apply = [];
+    const skipped = [];
+    for (const id of [...new Set(links ?? [])]) {
+        if (chain.includes(id)) skipped.push({ id, reason: 'loop' });
+        else if (chain.length >= maxDepth) skipped.push({ id, reason: 'depth' });
+        else apply.push(id);
+    }
+    return { apply, skipped };
+}
+
 /**
  * Whether a source no longer exists on the actor. Manual and unknown kinds never go away by themselves.
  * @param {string} key
