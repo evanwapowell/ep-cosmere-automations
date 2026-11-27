@@ -12,6 +12,8 @@ import {
     isSourceGone,
     itemKey,
     MANUAL,
+    MAX_LINK_DEPTH,
+    planLinks,
     planLongRest,
     planSourceRemoval,
     readSources,
@@ -284,4 +286,18 @@ test('when a source goes, the stacks it held go too', () => {
     assert.deepEqual(planSourceRemoval([{ id: 'ex', stacks: 2, sources: [injury, MANUAL] }], gone), [
         { id: 'ex', action: 'delete', sources: [MANUAL] },
     ], 'no free stack left');
+});
+
+test('planLinks: follows links not already being applied, within the depth limit', () => {
+    assert.deepEqual(planLinks(['prone'], ['slowed']), { apply: ['slowed'], skipped: [] });
+    assert.deepEqual(planLinks(['effect:abc'], ['slowed', 'slowed', 'prone']).apply, ['slowed', 'prone'], 'no repeats');
+    assert.deepEqual(planLinks(['prone', 'slowed'], ['prone', 'restrained']), {
+        apply: ['restrained'],
+        skipped: [{ id: 'prone', reason: 'loop' }],
+    });
+    const chain = Array.from({ length: MAX_LINK_DEPTH }, (_, i) => `c${i}`);
+    assert.deepEqual(planLinks(chain, ['x']), { apply: [], skipped: [{ id: 'x', reason: 'depth' }] });
+    assert.deepEqual(planLinks(chain.slice(1), ['x']).apply, ['x'], 'one shorter still goes on');
+    assert.deepEqual(planLinks(['a'], undefined), { apply: [], skipped: [] });
+    assert.ok(MAX_LINK_DEPTH > 3, 'the table\'s own chains (Unconscious → Prone → Slowed) fit');
 });

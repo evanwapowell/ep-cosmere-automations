@@ -210,27 +210,32 @@ async function onRest(actor, restType) {
 }
 
 /**
- * A long rest takes stacks off the conditions whose table entry has `longRest` (Exhausted: one; the system leaves
- * this to the GM), but not the stacks a source holds: an injury's Exhausted lasts as long as the injury. A step
- * another module already does is skipped, so it isn't done twice (its change is then refused for held stacks, by
- * conditions.js).
+ * A long rest takes stacks off every effect whose resolved rules have `longRest` (Exhausted: one; the system leaves
+ * this to the GM), but not the stacks a source holds: an injury's Exhausted lasts as long as the injury. An effect
+ * that doesn't stack has one stack, so one step ends it. A step another module already does is skipped, so it isn't
+ * done twice (its change is then refused for held stacks, by conditions.js).
+ *
+ * A table condition follows its own setting. Any other effect has none, so it follows the durations setting
+ * (a long rest is when its time runs out) and is left alone while disabled.
  */
 async function reduceOnLongRest(actor) {
     for (const { effect, rules, conditionId: id } of [...(actor.effects?.contents ?? [])].map(describeEffect)) {
         const n = rules.longRest;
-        if (!id || !n || !actor.effects.has(effect.id)) continue;
-        const mode = conditionMode(id);
-        if (mode === MODES.OFF || longRestDoneElsewhere(id)) continue;
-        await longRestStep(actor, effect, CONDITIONS_BY_ID[id], mode, n);
+        if (!n || !actor.effects.has(effect.id)) continue;
+        if (!id && (effect.disabled || effect.isSuppressed)) continue;
+        const mode = id ? conditionMode(id) : featureMode(SETTINGS.DURATIONS);
+        if (mode === MODES.OFF || (id && longRestDoneElsewhere(id))) continue;
+        await longRestStep(actor, effect, id, mode, n);
     }
 }
 
-async function longRestStep(actor, effect, entry, mode, longRest) {
+async function longRestStep(actor, effect, id, mode, longRest) {
+    const entry = id ? CONDITIONS_BY_ID[id] : null;
     const sources = readSources(effect.getFlag(MODULE_ID, FLAGS.SOURCES));
-    const total = entry.stackable ? effect.system?.stacks ?? 1 : 1;
+    const total = entry?.stackable ? effect.system?.stacks ?? 1 : 1;
     const plan = planLongRest(total, sources, longRest);
     const actorLabel = `<b>${esc(actorName(actor))}</b>`;
-    const name = statusLabel(entry.id, entry.name);
+    const name = entry ? statusLabel(id, entry.name) : effect.name;
     const condition = `<b>${esc(name)}</b>`;
     if (plan.action === 'keep') {
         await postLine(
@@ -252,7 +257,13 @@ async function longRestStep(actor, effect, entry, mode, longRest) {
         return;
     }
     const engine = { [MODULE_ID]: { [OPTION_KEYS.ENGINE]: { reason: t('reason.longRest', null, 'long rest') } } };
-    if (plan.action === 'delete') return effect.delete(engine);
+    if (plan.action === 'delete') {
+        // The delete handler posts the line for a condition; any other effect gets one here.
+        if (!entry) {
+            await postLine(actor, t('chat.effectExpired', { actor: actorLabel, effect: condition }, "{actor}'s {effect} has ended."));
+        }
+        return effect.delete(engine);
+    }
     const update = { 'system.stacks': plan.stacks };
     if (plan.sources) update[`flags.${MODULE_ID}.${FLAGS.SOURCES}`] = plan.sources;
     await effect.update(update, engine);
