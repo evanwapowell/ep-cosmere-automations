@@ -4,6 +4,7 @@
 # - Actions → Release → "Run workflow": pick the branch to release and type the version (0.3.0); the tag and
 #   release are created at that branch's latest commit. (This file must also be on the default branch for the
 #   button to show; the run uses the copy on the chosen branch.)
+# Releases are cut from main only: the workflow stops unless the commit being released is on origin/main.
 # Runs the tests first. The zip has the files at its root, without what .gitattributes marks export-ignore.
 # Foundry installs from https://github.com/evanwapowell/ep-cosmere-automations/releases/latest/download/module.json
 name: Release
@@ -31,6 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Work out the tag
         id: tag
@@ -44,6 +47,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Refuse to release a commit that is not on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Refusing to release $GITHUB_SHA: it is not on main. Releases are cut from main only." >&2
+            exit 1
+          fi
 
       - name: Test
         run: node --test
