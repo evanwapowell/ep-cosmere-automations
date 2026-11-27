@@ -6,6 +6,7 @@ import { CONDITIONS, CONDITIONS_BY_ID } from '../data/conditions.js';
 import { cleanupSources, conditionEffects, createCondition } from './conditions.js';
 import { FLAGS, MODULE_ID, OPTION_KEYS } from './constants.js';
 import { advanceDays, buildDuration, durationText, endScene, setDuration, useUp } from './durations.js';
+import { defaultDuration, defaultRules } from './logic/rules.js';
 import { activeConditions } from './mechanics.js';
 import { addSource, describeSources, effectKey, heldStacks, itemKey, MANUAL, readSources } from './logic/sources.js';
 import { normalizeValue } from './logic/values.js';
@@ -70,7 +71,7 @@ async function apply(actor, id, { value, stacks, source, duration } = {}) {
     const added = entry.stackable ? Math.max(1, stacks ?? 1) : undefined;
     if (added && src.key !== MANUAL.key) src.stacks = added; // the stacks this source holds
     const existing = conditionEffects(actor, id);
-    const durationState = buildDuration(actor, duration !== undefined ? duration : entry.duration);
+    const durationState = buildDuration(actor, duration !== undefined ? duration : defaultDuration(defaultRules(entry)));
 
     if (existing.length && entry.multiInstance) {
         return createCondition(actor, id, {

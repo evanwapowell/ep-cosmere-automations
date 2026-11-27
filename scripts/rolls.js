@@ -66,8 +66,8 @@ export function sideOf(actor) {
     return {
         uuid: actor.uuid,
         name: actor.token?.name ?? actor.name,
-        conditions: activeConditions(actor).map((c) => c.id),
-        situational: situationalEffects(actor).map(({ id, effectId, value }) => ({ id, effectId, value })),
+        conditions: activeConditions(actor).map(({ id, rules }) => ({ id, rules })),
+        situational: situationalEffects(actor).map(({ id, effectId, value, rules }) => ({ id, effectId, value, rules })),
         stance: actor.getFlag?.(SYSTEM_ID, 'mode.stance') ?? null,
     };
 }
@@ -80,7 +80,7 @@ function actorOf(context, source, config) {
 function modifiersFor(actor, test) {
     const roller = sideOf(actor);
     const targetActor = singleTarget(actor);
-    if (roller?.conditions.includes('blind') && targetActor) test = { ...test, beyondSenses: targetBeyondSenses(actor) };
+    if (roller?.conditions.some((c) => c.id === 'blind') && targetActor) test = { ...test, beyondSenses: targetBeyondSenses(actor) };
     return collectModifiers(
         { roller, target: sideOf(targetActor), test },
         { conditions: CONDITIONS_BY_ID, situational: SITUATIONAL_BY_ID, modeOf },

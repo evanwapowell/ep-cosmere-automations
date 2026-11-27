@@ -8,6 +8,7 @@ import { FLAGS, MODES, MODULE_ID } from './constants.js';
 import { planAdjustments, rateBonusDelta } from './logic/mechanics.js';
 import { conditionIdOf } from './logic/table.js';
 import { normalizeValue, valueEffectData } from './logic/values.js';
+import { ruleEffects, rulesOf } from './rules.js';
 import { conditionMode, engineEnabled } from './settings.js';
 import { safe, statusLabel, systemChoices, warn } from './util.js';
 
@@ -35,15 +36,11 @@ export function registerMechanics() {
     Hooks.on('preCreateActiveEffect', safe('preCreateActiveEffect', onPreCreate));
 }
 
-/** Active condition effects on an actor, one entry per effect. */
+/** Active condition effects on an actor, one entry per effect, each with its resolved rules. */
 export function activeConditions(actor) {
-    const list = [];
-    for (const effect of actor?.effects ?? []) {
-        if (effect.disabled || effect.isSuppressed) continue;
-        const id = conditionIdOf(effect.statuses, CONDITIONS_BY_ID);
-        if (id) list.push({ id, stacks: effect.system?.stacks, effect });
-    }
-    return list;
+    return ruleEffects(actor, { includeEmpty: true })
+        .filter((row) => row.conditionId)
+        .map(({ conditionId, stacks, effect, rules }) => ({ id: conditionId, stacks, effect, rules }));
 }
 
 /** The skill penalty the engine puts on an actor's skill modifiers (Exhausted stacks at full), or 0. */
@@ -108,6 +105,7 @@ function onPreCreate(effect, data, options, userId) {
         valueEffectData(entry, checked.value, {
             baseName: statusLabel(id, entry.name),
             full: mode === MODES.FULL,
+            rules: rulesOf(effect),
             labels: choices,
             flagScope: MODULE_ID,
         }),

@@ -4,6 +4,7 @@
 import { MECHANICS, VALUE_TYPES } from '../../data/conditions.js';
 import { parseDurationSpec } from './durations.js';
 import { ruleError } from './rolls.js';
+import { ENDS_WHEN } from './rules.js';
 
 /** The highest phase this release implements. */
 export const RELEASE_PHASE = 3;
@@ -173,7 +174,7 @@ export function validateSituational(table, conditionIds = new Set()) {
             if (!parsed.ok) errors.push(`${entry.id}: ${parsed.error}`);
         }
         for (const end of entry.endsWhen ?? []) {
-            if (!['attack', 'move'].includes(end)) errors.push(`${entry.id}: unknown endsWhen "${end}"`);
+            if (!ENDS_WHEN.includes(end)) errors.push(`${entry.id}: unknown endsWhen "${end}"`);
         }
         if (entry.stance && (entry.duration || entry.endsWhen)) errors.push(`${entry.id}: a stance rule has no duration`);
     }

@@ -15,6 +15,7 @@ import { advance, describeDuration, newDuration, parseDurationSpec, phaseIndex }
 import { describeSources, planLongRest, readSources } from './logic/sources.js';
 import { isEndStance } from './logic/stances.js';
 import { conditionIdOf } from './logic/table.js';
+import { describeEffect } from './rules.js';
 import { allActors, conditionMode, featureMode, longRestDoneElsewhere, setting, SETTINGS, stanceMode } from './settings.js';
 import { endStance } from './stances.js';
 import { afflictedTurnEnd } from './triggers.js';
@@ -215,20 +216,19 @@ async function onRest(actor, restType) {
  * conditions.js).
  */
 async function reduceOnLongRest(actor) {
-    for (const effect of [...(actor.effects?.contents ?? [])]) {
-        const id = conditionIdOf(effect.statuses, CONDITIONS_BY_ID);
-        const n = CONDITIONS_BY_ID[id]?.longRest;
-        if (!n || !actor.effects.has(effect.id)) continue;
+    for (const { effect, rules, conditionId: id } of [...(actor.effects?.contents ?? [])].map(describeEffect)) {
+        const n = rules.longRest;
+        if (!id || !n || !actor.effects.has(effect.id)) continue;
         const mode = conditionMode(id);
         if (mode === MODES.OFF || longRestDoneElsewhere(id)) continue;
-        await longRestStep(actor, effect, CONDITIONS_BY_ID[id], mode);
+        await longRestStep(actor, effect, CONDITIONS_BY_ID[id], mode, n);
     }
 }
 
-async function longRestStep(actor, effect, entry, mode) {
+async function longRestStep(actor, effect, entry, mode, longRest) {
     const sources = readSources(effect.getFlag(MODULE_ID, FLAGS.SOURCES));
     const total = entry.stackable ? effect.system?.stacks ?? 1 : 1;
-    const plan = planLongRest(total, sources, entry.longRest);
+    const plan = planLongRest(total, sources, longRest);
     const actorLabel = `<b>${esc(actorName(actor))}</b>`;
     const name = statusLabel(entry.id, entry.name);
     const condition = `<b>${esc(name)}</b>`;

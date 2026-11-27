@@ -2,7 +2,8 @@
  * Condition values (Afflicted [3 keen], Enhanced [Strength +1]) and the effect data they imply.
  * Pure functions, no Foundry globals.
  */
-import { MECHANICS, VALUE_TYPES } from '../../data/conditions.js';
+import { VALUE_TYPES } from '../../data/conditions.js';
+import { defaultRules, MECHANIC_KINDS } from './rules.js';
 
 /** Foundry's CONST.ACTIVE_EFFECT_MODES (stable since v10). */
 export const EFFECT_MODES = Object.freeze({ CUSTOM: 0, MULTIPLY: 1, ADD: 2, DOWNGRADE: 3, UPGRADE: 4, OVERRIDE: 5 });
@@ -66,17 +67,21 @@ export function formatValue(entry, value, labels = {}) {
  * Name, changes and flags an effect gets for a value.
  * @param {object} entry
  * @param {object | null} value
- * @param {{baseName: string, full: boolean, labels?: object, flagScope: string}} options
- *   full: the condition is in "full" mode, so mechanics are written as effect changes
+ * @param {{baseName: string, full: boolean, labels?: object, flagScope: string, rules?: object}} options
+ *   full: the condition is in "full" mode, so mechanics are written as effect changes;
+ *   rules: the effect's resolved rules (default: the table's for this entry)
  * @returns {{name: string, changes?: object[], flags: object}}
  */
-export function valueEffectData(entry, value, { baseName, full, labels, flagScope }) {
+export function valueEffectData(entry, value, { baseName, full, labels, flagScope, rules }) {
     const text = formatValue(entry, value, labels);
     const data = {
         name: text ? `${baseName} [${text}]` : baseName,
         flags: { [flagScope]: { value } },
     };
-    if (full && entry.mechanics?.includes(MECHANICS.ATTRIBUTE_BONUS) && value?.attribute) {
+    const fromValue = (rules ?? defaultRules(entry)).mechanics?.some(
+        (m) => m.kind === MECHANIC_KINDS.ATTRIBUTE_BONUS && m.from === 'value',
+    );
+    if (full && fromValue && value?.attribute) {
         data.changes = [
             { key: `system.attributes.${value.attribute}.bonus`, mode: EFFECT_MODES.ADD, value: String(value.amount) },
         ];

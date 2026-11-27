@@ -6,7 +6,9 @@ import { CONDITIONS_BY_ID, VALUE_TYPES } from '../data/conditions.js';
 import { FLAGS, MODES, MODULE_ID } from './constants.js';
 import { buildDuration } from './durations.js';
 import { KINDS } from './logic/durations.js';
+import { defaultDuration } from './logic/rules.js';
 import { normalizeValue, valueEffectData } from './logic/values.js';
+import { rulesOf } from './rules.js';
 import { conditionMode } from './settings.js';
 import { esc, statusLabel, systemChoices, t } from './util.js';
 
@@ -33,10 +35,11 @@ function durationChoices() {
  * Ask for a condition's value and/or duration.
  * @param {object} entry
  * @param {string} actorLabel
- * @param {{askValue: boolean, askDuration: boolean}} what
+ * @param {{askValue: boolean, askDuration: boolean, rules?: object}} what
+ *   rules: the effect's resolved rules; their default duration is what the dialog starts on
  * @returns {Promise<object | null>} raw form values ({type, attribute, amount, duration}), or null if cancelled
  */
-export async function promptDetails(entry, actorLabel, { askValue, askDuration }) {
+export async function promptDetails(entry, actorLabel, { askValue, askDuration, rules }) {
     const choices = systemChoices();
     let fields = '';
     if (askValue && entry.value === VALUE_TYPES.DAMAGE) {
@@ -53,7 +56,8 @@ export async function promptDetails(entry, actorLabel, { askValue, askDuration }
                 <input type="number" name="amount" value="1" step="1" autofocus></div>`;
     }
     if (askDuration) {
-        const preset = entry.duration?.length === 1 ? entry.duration[0] : 'none';
+        const own = defaultDuration(rules);
+        const preset = Array.isArray(own) && own.length === 1 ? own[0] : 'none';
         fields += `
             <div class="form-group"><label>${esc(t('dialog.duration', null, 'Lasts'))}</label>
                 <select name="duration">${options(durationChoices(), preset)}</select></div>`;
@@ -86,7 +90,8 @@ export async function promptDetails(entry, actorLabel, { askValue, askDuration }
  */
 export async function askDetails(effect, id, actorLabel, { askValue, askDuration }) {
     const entry = CONDITIONS_BY_ID[id];
-    const raw = await promptDetails(entry, actorLabel, { askValue, askDuration });
+    const rules = rulesOf(effect);
+    const raw = await promptDetails(entry, actorLabel, { askValue, askDuration, rules });
     if (!effect.parent?.effects?.has(effect.id)) return;
 
     const update = {};
@@ -102,6 +107,7 @@ export async function askDetails(effect, id, actorLabel, { askValue, askDuration
                 valueEffectData(entry, checked.value, {
                     baseName: statusLabel(id, entry.name),
                     full: conditionMode(id) === MODES.FULL,
+                    rules,
                     labels: choices,
                     flagScope: MODULE_ID,
                 }),
@@ -109,7 +115,7 @@ export async function askDetails(effect, id, actorLabel, { askValue, askDuration
         } else ui.notifications.warn(checked.error);
     }
 
-    const spec = raw && askDuration ? raw.duration : entry.duration;
+    const spec = raw && askDuration ? raw.duration : defaultDuration(rules);
     const duration = spec ? buildDuration(effect.parent, spec) : null;
     if (duration) {
         update.flags ??= {};
