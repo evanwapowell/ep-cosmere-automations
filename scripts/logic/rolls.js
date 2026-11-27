@@ -104,27 +104,29 @@ export function stanceEntry(stanceId, situational) {
  *   the condition and situational tables by id, for the labels and keys of the effects they describe
  * @returns {Source[]}
  *
- * @typedef {{effect: {id: string, name?: string}, rules: object, conditionId?: string | null,
- *   situationalId?: string | null, stanceId?: string | null, value?: object | null}} Row
- *   stanceId: the talent id a stance marker stands for (scripts/stances.js)
+ * @typedef {{effect: {id: string, uuid?: string, name?: string}, rules: object, conditionId?: string | null,
+ *   situationalId?: string | null, stanceId?: string | null, value?: object | null, onActor?: boolean}} Row
+ *   stanceId: the talent id a stance marker stands for (scripts/stances.js);
+ *   onActor: false for an effect one of the actor's items transfers to it (never used up by a test)
  * @typedef {{key: string, modeKey: string, label: string, rules: object, effectId?: string, value?: object | null}} Source
  *   key: what counts once: the condition id for a condition (several instances of one condition count once),
- *     `stance:<talent id>` for a stance, otherwise the effect id;
+ *     `stance:<talent id>` for a stance, otherwise the effect (its uuid, else its id);
  *   modeKey: the modifier's key, which `modeOf` reads: the condition id, `situational:<id>` for the situational
  *     table's entries (stances included), `effect:<effect id>` for any other effect;
  *   label: the table's name for the tables' entries, the effect's own name for any other effect;
- *   effectId: the effect a `consume` rule ends
+ *   effectId: the effect a `consume` rule ends (absent for an effect an item transfers)
  */
 export function rollSources(rows, { conditions, situational }) {
     const out = [];
-    for (const { effect, rules, conditionId, situationalId, stanceId, value } of rows ?? []) {
+    for (const { effect, rules, conditionId, situationalId, stanceId, value, onActor } of rows ?? []) {
         if (!rules?.rolls?.length) continue;
-        const base = { rules, effectId: effect.id, value: value ?? null };
+        // An effect an item transfers lives on the item: it is not the actor's to use up.
+        const base = { rules, value: value ?? null, ...(onActor === false ? {} : { effectId: effect.id }) };
         const name = effect.name ?? effect.id;
         if (conditionId) {
             out.push({ ...base, key: conditionId, modeKey: conditionId, label: conditions[conditionId]?.name ?? name });
         } else if (situationalId) {
-            out.push({ ...base, key: effect.id, modeKey: situationalKey(situationalId), label: situational[situationalId]?.name ?? name });
+            out.push({ ...base, key: effect.uuid ?? effect.id, modeKey: situationalKey(situationalId), label: situational[situationalId]?.name ?? name });
         } else if (stanceId) {
             const entry = stanceEntry(stanceId, situational);
             out.push({
@@ -134,7 +136,7 @@ export function rollSources(rows, { conditions, situational }) {
                 label: entry?.name ?? name,
             });
         } else {
-            out.push({ ...base, key: effect.id, modeKey: effectKey(effect.id), label: name });
+            out.push({ ...base, key: effect.uuid ?? effect.id, modeKey: effectKey(effect.id), label: name });
         }
     }
     return out;
@@ -227,6 +229,17 @@ export function collectModifiers({ roller, target, test }, { modeOf }) {
 /** Whether any of a side's roll rules needs to know if the target is beyond the roller's senses (Blind). */
 export function needsSensesRange(side) {
     return !!side?.sources?.some((source) => source.rules?.rolls?.some((rule) => rule.beyondSenses));
+}
+
+/**
+ * The term that adds a skill's engine modifiers back to a test that left them out: `0 - 2` for a penalty of 2,
+ * `0 + 1` for a bonus of 1 (a penalty of -1), null for none.
+ * @param {number} penalty what the engine takes off the skill (`skillPenalty`; negative for a bonus)
+ * @returns {string | null}
+ */
+export function skillPenaltyFormula(penalty) {
+    if (!Number.isFinite(penalty) || penalty === 0) return null;
+    return penalty > 0 ? `0 - ${penalty}` : `0 + ${-penalty}`;
 }
 
 /**

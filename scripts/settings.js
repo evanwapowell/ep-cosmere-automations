@@ -161,7 +161,7 @@ export function registerSettings() {
         hint: t(
             'settings.otherEffects.hint',
             null,
-            "Effects that aren't one of the module's conditions or situational effects (a talent's, an item's, a homebrew effect) but carry rules of their own. Full: their rules apply. Remind only: they change nothing (the chat card of a test still lists their advantages and disadvantages).",
+            "Rules carried by effects that are not one of the module's conditions or situational effects (a talent's, a stance's, an item's or a homebrew effect's). Full: their movement and skill changes and their advantages and disadvantages apply. Remind: they change nothing (the chat card of a test still lists their advantages and disadvantages). A condition's rules follow that condition's own setting.",
         ),
         scope: 'world',
         config: true,
@@ -205,6 +205,17 @@ export function conditionMode(id) {
     } catch {
         return MODES.OFF;
     }
+}
+
+/**
+ * The mode an effect's rules follow: a condition's own setting when the condition has one, else the world setting
+ * "Rules on other effects" (effects that are not conditions, and conditions the module doesn't automate, whose
+ * rules can only come from the effect itself).
+ * @param {string | null | undefined} conditionId the table condition the effect stands for, if any
+ */
+export function effectRulesMode(conditionId) {
+    if (conditionId && isAutomated(CONDITIONS_BY_ID[conditionId])) return conditionMode(conditionId);
+    return featureMode(SETTINGS.OTHER_EFFECTS);
 }
 
 export function stanceMode() {

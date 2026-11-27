@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { FakeActor, flush, Hooks, installFakeFoundry, rollAttack, rollSkill } from './fake-foundry.js';
+import { FakeActor, FakeEffect, FakeItem, flush, Hooks, installFakeFoundry, rollAttack, rollSkill } from './fake-foundry.js';
 
 const CONDITION_IDS = [
     'afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious', 'stunned',
@@ -509,4 +509,43 @@ test('a custom effect on the target: attacks against it gain a disadvantage', as
     const roll = await rollAttack(kal, sword(kal), { fastForward: true });
     assert.equal(roll.options.advantageMode, 'disadvantage');
     assert.equal(roll.options[MODULE].note, 'Disadvantage: target Smoke Cloud.');
+});
+
+test('another attribute: the engine\'s modifiers for that skill are added back, a bonus as "+ n"', async () => {
+    reset();
+    const penalty = (roll) => roll.terms.slice(3).map((t) => t.operator ?? t.number).join(' ');
+    const kal = new FakeActor({ name: 'Kal' });
+    const [effect] = await kal.createEmbeddedDocuments('ActiveEffect', [
+        { name: 'Drilled', flags: { [MODULE]: { rules: { mechanics: [{ kind: 'skillModifier', amount: 1, skills: ['ath'] }] } } } },
+    ]);
+    await flush();
+    assert.equal(penalty(await rollSkill(kal, 'ath', { fastForward: true, attribute: 'int' })), '+ 1', 'a listed-skill bonus');
+    assert.equal(penalty(await rollSkill(kal, 'agi', { fastForward: true, attribute: 'int' })), '', 'not for another skill');
+
+    await api.apply(kal, 'exhausted', { stacks: 2 });
+    await flush();
+    assert.equal(penalty(await rollSkill(kal, 'ath', { fastForward: true, attribute: 'int' })), '- 1', 'Exhausted 2 and the +1 together');
+    assert.equal(penalty(await rollSkill(kal, 'agi', { fastForward: true, attribute: 'int' })), '- 2');
+
+    await effect.setFlag(MODULE, 'rules', { mechanics: [{ kind: 'skillModifier', amount: 3, skills: 'all' }] });
+    assert.equal(penalty(await rollSkill(kal, 'agi', { fastForward: true, attribute: 'int' })), '+ 1', 'an all-skills bonus over the penalty');
+});
+
+test('a talent\'s transferred effect with roll rules counts (as in the mechanics layer); disabled, it does not; never used up', async () => {
+    reset();
+    const talent = new FakeItem({ id: 'talent0000000009', name: 'Keen Eye', type: 'talent' });
+    const kal = new FakeActor({ name: 'Kal', items: [talent] });
+    const effect = new FakeEffect(
+        { _id: 'talenteffect0001', name: 'Keen Eye', flags: { [MODULE]: { rules: { rolls: [{ who: 'self', mode: 'advantage', tests: { skills: ['per'] }, consume: true }] } } } },
+        talent,
+    );
+    talent.effects.set(effect.id, effect);
+    const roll = await rollSkill(kal, 'per', { fastForward: true });
+    assert.equal(roll.options.advantageMode, 'advantage');
+    assert.equal(roll.options[MODULE].note, 'Advantage: Keen Eye.');
+    assert.deepEqual(roll.options[MODULE].consume, [], 'an item\'s effect is not the actor\'s to use up');
+    assert.ok(talent.effects.has(effect.id));
+
+    effect.updateSource({ disabled: true });
+    assert.equal((await rollSkill(kal, 'per', { fastForward: true })).options.advantageMode, 'none');
 });

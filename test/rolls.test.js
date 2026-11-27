@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { CONDITIONS, CONDITIONS_BY_ID } from '../data/conditions.js';
 import { SITUATIONAL, SITUATIONAL_BY_ID } from '../data/situational.js';
-import { attackTypeOf, beyondSenses, collectModifiers, describeModifiers, netMode, ruleError, ruleMatchesTest, rollSources, sideSources, stanceSource } from '../scripts/logic/rolls.js';
+import { attackTypeOf, beyondSenses, collectModifiers, describeModifiers, netMode, ruleError, ruleMatchesTest, rollSources, sideSources, skillPenaltyFormula, stanceSource } from '../scripts/logic/rolls.js';
 import { defaultRules } from '../scripts/logic/rules.js';
 import { validateSituational } from '../scripts/logic/table.js';
 
@@ -246,4 +246,26 @@ test('rollSources leaves out effects without roll rules', () => {
         { effect: { id: 'b', name: 'Nothing' }, rules: { schema: 1 } },
     ];
     assert.deepEqual(rollSources(rows, TABLES), []);
+});
+
+test('an effect an item transfers counts, keyed by its uuid, but is never used up', () => {
+    const rule = [{ who: 'self', mode: 'advantage', tests: 'all', consume: true }];
+    const rows = [
+        { effect: { id: 'X1', uuid: 'Actor.a.Item.i1.ActiveEffect.X1', name: 'Charm' }, rules: { schema: 1, rolls: rule }, onActor: false },
+        { effect: { id: 'X1', uuid: 'Actor.a.Item.i2.ActiveEffect.X1', name: 'Charm' }, rules: { schema: 1, rolls: rule }, onActor: false },
+    ];
+    const list = rollSources(rows, TABLES);
+    assert.deepEqual(list.map((s) => [s.key, s.effectId]), [['Actor.a.Item.i1.ActiveEffect.X1', undefined], ['Actor.a.Item.i2.ActiveEffect.X1', undefined]]);
+    const mods = collectModifiers({ roller: { uuid: 'Actor.a', name: 'A', sources: list }, target: null, test: skill('ath') }, sources);
+    assert.equal(mods.length, 2, 'two items with a copy of the same effect: two sources');
+    assert.ok(mods.every((m) => !m.consume));
+});
+
+test('skillPenaltyFormula: a penalty is taken off, a bonus added, never "- -n"', () => {
+    assert.equal(skillPenaltyFormula(2), '0 - 2');
+    assert.equal(skillPenaltyFormula(-1), '0 + 1');
+    assert.equal(skillPenaltyFormula(0), null);
+    assert.equal(skillPenaltyFormula(-0), null);
+    assert.equal(skillPenaltyFormula(Number.NaN), null);
+    assert.equal(skillPenaltyFormula(undefined), null);
 });

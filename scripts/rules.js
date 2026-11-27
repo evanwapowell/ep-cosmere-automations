@@ -83,16 +83,32 @@ export function rulesOf(effect) {
 }
 
 /**
+ * The effects that apply to an actor: its own, and with `transferred` also those its items transfer to it (a
+ * talent's or a stance's effect). Foundry v13's `allApplicableEffects()` gives both; cosmere-rpg 3.1.x overrides it
+ * to add the effects of nested items. Disabled and suppressed effects are left out here, so a stance the actor is
+ * not in (the system disables its effects) never counts.
+ * @param {Actor} actor
+ * @param {boolean} transferred
+ * @returns {Iterable<ActiveEffect>}
+ */
+function applyingEffects(actor, transferred) {
+    if (transferred && typeof actor?.allApplicableEffects === 'function') return actor.allApplicableEffects();
+    return actor?.effects ?? [];
+}
+
+/**
  * An actor's enabled, unsuppressed effects that resolve to any rules.
  * @param {Actor} actor
- * @param {{includeEmpty?: boolean}} [options] includeEmpty: also the effects with no rules at all (a condition
- *   that is only a marker, like Surprised), for callers that need to know the condition is there
+ * @param {{includeEmpty?: boolean, transferred?: boolean}} [options] includeEmpty: also the effects with no rules
+ *   at all (a condition that is only a marker, like Surprised), for callers that need to know the condition is
+ *   there; transferred: also the effects the actor's items transfer to it (the mechanics layer reads these; the
+ *   other layers, which may delete or update what they find, read only the actor's own effects for now)
  * @returns {ReturnType<typeof describeEffect>[]}
  */
-export function ruleEffects(actor, { includeEmpty = false } = {}) {
+export function ruleEffects(actor, { includeEmpty = false, transferred = false } = {}) {
     const list = [];
-    for (const effect of actor?.effects ?? []) {
-        if (effect.disabled || effect.isSuppressed) continue;
+    for (const effect of applyingEffects(actor, transferred)) {
+        if (!effect || effect.disabled || effect.isSuppressed) continue;
         const row = describeEffect(effect);
         if (includeEmpty || hasRules(row.rules)) list.push(row);
     }

@@ -677,9 +677,26 @@ conditions) and `describeEffect(effect)`. Every layer now reads rules through it
 the long-rest step, a situational effect's `endsWhen`, and the relay's `consume`. Pure functions take an effect's
 resolved `rules` when given and otherwise convert the table entry, so their old signatures still work. The tables
 are still read directly for identity and by the validators (a stance's roll rules were read from the table too,
-until #5 folded them into the stance marker). Layers still understand only what the tables could say (`planAdjustments` reads
-movement and all-skill `skillModifier` records; listed skills and fixed attribute bonuses are #4's), so an effect's
-own rules can already change which table behaviour applies. The following steps (#4 to #6) widen each layer.
+until #5 folded them into the stance marker). Layers still understand only what the tables could say, so an effect's own rules can
+already change which table behaviour applies. The following steps (#4 to #6) widen each layer.
+
+**Step 3 (#4) widened the mechanics layer** ("Mechanics from any effect", below).
+
+**Step 5 (#6) made links and the long-rest step work for any effect.** An effect that isn't a table condition
+(a talent's, an item's, a homebrew "Pinned" with `links: ['immobilized']`) brings its linked conditions when it is
+created and takes them away when it is deleted, with the effect (id and name) as the source. Such an effect has no
+setting of its own, so linking follows the engine's master switch only (a disabled effect brings nothing, and
+enabling one later brings nothing yet); a table condition still follows its own setting. A long rest takes `longRest`
+stacks off any effect whose resolved rules have it, except stacks a source holds; an effect that doesn't stack has
+one, so one step ends it. A table condition follows its own setting for this; any other effect follows the
+durations setting (full ends it, remind says so, off leaves it) and is skipped while disabled. Both are interim,
+until "Rules on other effects" decides modes for effects that aren't conditions (#4, #5).
+**Loops:** the table is checked for link cycles when it loads, but an effect's own rules can make one the table check
+can't see. A link the engine creates carries the chain of links being followed in the options of its creation
+(`engine.chain`); `planLinks` (`scripts/logic/sources.js`) skips a link whose condition is already in the chain (it
+would make two effects hold each other) and stops a chain at `MAX_LINK_DEPTH` (6, the effect that started it
+included; the table's own chains are three deep). Either stop warns once, in the console and as a notification.
+Links still name table conditions only.
 
 **Step 4 (#5): the roll layer reads rules from any effect.** A side of a test is `{ uuid, name, sources }`, one
 source per effect of the actor's `ruleEffects` that has roll rules (`rollSources` and `sideSources`, pure, in
@@ -700,12 +717,20 @@ source per effect of the actor's `ruleEffects` that has roll rules (`rollSources
   resolves its defaults from the situational entry with that `stance` (Flamestance), so a marker can carry rules of
   its own that replace them. A marker counts only for the stance the actor is in. When the actor is in a stance
   with no marker (stances not in full mode, or the stance set by something else), the table's stance rules still
-  apply, as before. A stance talent's own effect, if it has `rules`, counts like any effect once `ruleEffects`
-  reads it (which effects count is #4's decision, in `ruleEffects`; the roll layer follows it).
+  apply, as before.
+- **Which effects count** is #4's decision: the actor's own and those its items transfer (`ruleEffects(actor,
+  { transferred: true })`), so a talent's or stance talent's effect with roll rules counts (only while enabled: the
+  system disables the effects of a stance the actor is not in). An effect an item transfers is never used up by
+  `consume` (it lives on the item); its source has no `effectId`. Sources are keyed by the effect's uuid, so two
+  items carrying a copy of the same effect count twice.
 - **Modes:** a condition follows the weaker of "Advantage and disadvantage on tests" and its own setting (as
   before); situational effects and stances follow the roll setting (as before); any other effect follows the
-  weaker of the roll setting and **"Rules on other effects"** (new world setting, remind only by default).
+  weaker of the roll setting and **"Rules on other effects"** (#4's setting, through `effectRulesMode`).
 - `api.modifiers(actor, …)` goes through the same `modifiersFor` as the roll hooks and returns the same shape.
+- **A test rolled with another attribute** (the system then leaves the skill's `mod.bonus` out) gets the engine's
+  modifiers for *that* skill added back as a term: `skillPenalty(actor, skill)`, with the skill id from the
+  roll's config, so listed-skill modifiers count too. A bonus is added back as `+ n` (`skillPenaltyFormula`), never
+  as `- -n`.
 
 ### The shape
 
@@ -822,6 +847,51 @@ problem.
   module reports them as unknown and uses the defaults for that effect, which is the safe failure.
 - **A change to what existing rules mean, or to the shape of an existing field, bumps it,** and `normalizeRules`
   then upgrades older schemas, so rules stored in worlds keep working.
+
+### Mechanics from any effect (step 3, #4)
+
+The mechanics layer reads `rules.mechanics` from every effect that applies to the actor, not only from the
+table's conditions. `mechanicRows(actor)` (`scripts/mechanics.js`) lists them as `{ key, rules, stacks, value }`
+and `planAdjustments(rows, isFull)` (`scripts/logic/mechanics.js`, pure) turns them into a plan; `planFor(actor)`
+does both under the settings. The old call, `planAdjustments(active, table, isFullById)`, still works.
+
+**Which effects count.**
+
+- The actor's own effects: yes.
+- Effects on the actor's items that transfer to it (a talent's, a stance's, an item's): yes. They come from
+  `actor.allApplicableEffects()`, Foundry v13's list of the actor's effects plus its items' effects with
+  `transfer`; cosmere-rpg 3.1.x overrides it to add the effects of nested items too. (`appliedEffects` is the same
+  list filtered by `active`; the module filters itself so that one test decides.)
+- Disabled and suppressed effects never count. The system disables the effects of a stance the actor is not in, so
+  only the current stance's rules apply.
+- Only the mechanics layer reads transferred effects for now (`ruleEffects(actor, { transferred: true })`). The
+  other layers can delete or update the effects they find (`endsWhen`, links, long rest), which must not reach an
+  item's effect by accident; #5 and #6 decide for theirs.
+
+**Modes.** A condition's rules (an effect whose single status is a condition with a setting) follow that
+condition's setting, as before, own rules included. Every other effect follows the world setting **"Rules on other
+effects"** (`otherEffects`): full, remind only (the default, like every other feature), off. In remind-only and off
+modes those rules change nothing. A table condition the module doesn't automate yet (no setting) can only have
+mechanics through its own rules, so it follows "Rules on other effects" too (`effectRulesMode` in
+`scripts/settings.js`).
+
+**What each record does, and how they stack.** As before: several `half` sources halve once; `zero` beats `half`;
+skill modifiers add up; `perStack` multiplies by `system.stacks`. A plan lists a condition by its id (two Slowed
+effects are one source) and any other effect by its uuid.
+
+| Record | Where it applies |
+| --- | --- |
+| `movement` | After the system's derivation, on every movement rate's `bonus` (unchanged). |
+| `skillModifier`, `skills: 'all'` | After derivation, on every skill's `mod.bonus` (`plan.skillPenalty`, a penalty as a positive number; unchanged). |
+| `skillModifier`, listed skills | After derivation, on those skills' `mod.bonus` (`plan.skillModifiers`, signed, by skill). |
+| `attributeBonus`, fixed | On `system.attributes.<id>.bonus` right after the actor's `applyActiveEffects()`, so the system's secondary derivation (skills, movement, senses) sees it like an effect change. cosmere-rpg 3.1.x calls `applyActiveEffects` inside the actor's `prepareDerivedData`, before `prepareSecondaryDerivedData`; the module wraps it. Not defenses (the system derives those from attribute values). |
+| `attributeBonus`, `from: 'value'` | Not by the derived step. The value path (`onPreCreate` and `valueEffectData`) writes it as a real effect change when the condition is created with a value (Enhanced), as before; counting it again would apply it twice. Its record is what tells the value path to write it, so step 7 can show it. |
+
+`skillPenalty(actor)`, which the roll layer adds back when a test leaves the skill's bonus out, reads the same
+plan; `skillPenalty(actor, skill)` also counts the modifiers listed for that skill (the roll layer passes the
+test's skill since #5). With a bonus in full mode it can be negative; the roll layer then adds `+ n`.
+
+Not yet verified in Foundry: the live check is part of step 8 (#9).
 
 ### Left out of schema 1
 
