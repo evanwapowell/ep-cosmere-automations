@@ -26,7 +26,7 @@ const full = () => true;
 
 test('no adjustments without automated conditions', () => {
     const plan = planAdjustments([{ id: 'stunned' }, { id: 'prone' }], CONDITIONS_BY_ID, full);
-    assert.deepEqual(plan, { noMovement: [], halfMovement: [], skillPenalty: 0, penaltySources: [] });
+    assert.deepEqual(plan, { noMovement: [], halfMovement: [], skillPenalty: 0, penaltySources: [], skillModifiers: {}, attributeBonuses: {} });
 });
 
 test('Slowed halves movement, rounding down', () => {

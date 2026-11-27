@@ -677,9 +677,10 @@ conditions) and `describeEffect(effect)`. Every layer now reads rules through it
 the long-rest step, a situational effect's `endsWhen`, and the relay's `consume`. Pure functions take an effect's
 resolved `rules` when given and otherwise convert the table entry, so their old signatures still work. The tables
 are still read directly for identity, by the validators, and for a stance's roll rules (a stance is not an
-effect; #5 folds it in). Layers still understand only what the tables could say (`planAdjustments` reads
-movement and all-skill `skillModifier` records; listed skills and fixed attribute bonuses are #4's), so an effect's
-own rules can already change which table behaviour applies. The following steps (#4 to #6) widen each layer.
+effect; #5 folds it in). Layers still understand only what the tables could say, so an effect's own rules can
+already change which table behaviour applies. The following steps (#4 to #6) widen each layer.
+
+**Step 3 (#4) widened the mechanics layer** ("Mechanics from any effect", below).
 
 ### The shape
 
@@ -796,6 +797,51 @@ problem.
   module reports them as unknown and uses the defaults for that effect, which is the safe failure.
 - **A change to what existing rules mean, or to the shape of an existing field, bumps it,** and `normalizeRules`
   then upgrades older schemas, so rules stored in worlds keep working.
+
+### Mechanics from any effect (step 3, #4)
+
+The mechanics layer reads `rules.mechanics` from every effect that applies to the actor, not only from the
+table's conditions. `mechanicRows(actor)` (`scripts/mechanics.js`) lists them as `{ key, rules, stacks, value }`
+and `planAdjustments(rows, isFull)` (`scripts/logic/mechanics.js`, pure) turns them into a plan; `planFor(actor)`
+does both under the settings. The old call, `planAdjustments(active, table, isFullById)`, still works.
+
+**Which effects count.**
+
+- The actor's own effects: yes.
+- Effects on the actor's items that transfer to it (a talent's, a stance's, an item's): yes. They come from
+  `actor.allApplicableEffects()`, Foundry v13's list of the actor's effects plus its items' effects with
+  `transfer`; cosmere-rpg 3.1.x overrides it to add the effects of nested items too. (`appliedEffects` is the same
+  list filtered by `active`; the module filters itself so that one test decides.)
+- Disabled and suppressed effects never count. The system disables the effects of a stance the actor is not in, so
+  only the current stance's rules apply.
+- Only the mechanics layer reads transferred effects for now (`ruleEffects(actor, { transferred: true })`). The
+  other layers can delete or update the effects they find (`endsWhen`, links, long rest), which must not reach an
+  item's effect by accident; #5 and #6 decide for theirs.
+
+**Modes.** A condition's rules (an effect whose single status is a condition with a setting) follow that
+condition's setting, as before, own rules included. Every other effect follows the world setting **"Rules on other
+effects"** (`otherEffects`): full, remind only (the default, like every other feature), off. In remind-only and off
+modes those rules change nothing. A table condition the module doesn't automate yet (no setting) can only have
+mechanics through its own rules, so it follows "Rules on other effects" too (`effectRulesMode` in
+`scripts/settings.js`).
+
+**What each record does, and how they stack.** As before: several `half` sources halve once; `zero` beats `half`;
+skill modifiers add up; `perStack` multiplies by `system.stacks`. A plan lists a condition by its id (two Slowed
+effects are one source) and any other effect by its uuid.
+
+| Record | Where it applies |
+| --- | --- |
+| `movement` | After the system's derivation, on every movement rate's `bonus` (unchanged). |
+| `skillModifier`, `skills: 'all'` | After derivation, on every skill's `mod.bonus` (`plan.skillPenalty`, a penalty as a positive number; unchanged). |
+| `skillModifier`, listed skills | After derivation, on those skills' `mod.bonus` (`plan.skillModifiers`, signed, by skill). |
+| `attributeBonus`, fixed | On `system.attributes.<id>.bonus` right after the actor's `applyActiveEffects()`, so the system's secondary derivation (skills, movement, senses) sees it like an effect change. cosmere-rpg 3.1.x calls `applyActiveEffects` inside the actor's `prepareDerivedData`, before `prepareSecondaryDerivedData`; the module wraps it. Not defenses (the system derives those from attribute values). |
+| `attributeBonus`, `from: 'value'` | Not by the derived step. The value path (`onPreCreate` and `valueEffectData`) writes it as a real effect change when the condition is created with a value (Enhanced), as before; counting it again would apply it twice. Its record is what tells the value path to write it, so step 7 can show it. |
+
+`skillPenalty(actor)`, which the roll layer adds back when a test leaves the skill's bonus out, reads the same
+plan; `skillPenalty(actor, skill)` also counts the modifiers listed for that skill (the roll layer does not pass
+the skill yet). With an all-skills bonus in full mode it can be negative.
+
+Not yet verified in Foundry: the live check is part of step 8 (#9).
 
 ### Left out of schema 1
 

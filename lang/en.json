@@ -55,6 +55,10 @@
       "actionEffects": {
         "name": "Effects from Dodge, Brace and Gain Advantage",
         "hint": "Full: using these actions puts their effect on the token (Gain Advantage after the player confirms success), and the roll layer reads it. Remind: a chat line only."
+      },
+      "otherEffects": {
+        "name": "Rules on other effects",
+        "hint": "Rules carried by effects that are not one of the module's conditions (a talent's, a stance's, an item's or a homebrew effect's). Full: their movement and skill changes apply. Remind: they change nothing. A condition's rules follow that condition's own setting."
       }
     },
     "chat": {
