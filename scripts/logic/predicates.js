@@ -8,7 +8,7 @@
  *   test:attack                     the test is an attack test
  *   test:skill:<skill id>           the skill the test uses (an attack's weapon skill too)
  *   attack:melee | attack:ranged    the kind of attack, when it is known
- *   self:condition:<condition id>   the roller has that condition (an id of the condition table)
+ *   self:condition:<status id>      the roller has that status: a table condition, or any status id an enabled effect carries
  *   self:stance:<stance id>         the roller is in that stance (the stance talent's system id)
  *   self:is:<actor uuid>            who the roller is
  *   target:condition:<id>, target:stance:<id>, target:is:<uuid>     the same for the roller's single target
@@ -56,10 +56,10 @@ export const FACT_SHAPES = Object.freeze([
     'test:skill:<skill id>',
     'attack:melee',
     'attack:ranged',
-    'self:condition:<condition id>',
+    'self:condition:<status id>',
     'self:stance:<stance id>',
     'self:is:<actor uuid>',
-    'target:condition:<condition id>',
+    'target:condition:<status id>',
     'target:stance:<stance id>',
     'target:is:<actor uuid>',
     'target:beyond-senses',
@@ -80,7 +80,7 @@ export const NEVER = Object.freeze({ or: Object.freeze([]) });
  * @returns {Set<string>}
  *
  * @typedef {{uuid?: string, conditions?: Iterable<string>, stance?: string | null}} FactSide
- *   conditions: the ids of the table conditions it has; stance: the stance it is in
+ *   conditions: the status ids it has (table conditions and any other status); stance: the stance it is in
  */
 export function rollFacts({ roller = null, target = null, test = null } = {}) {
     const facts = new Set();
@@ -142,7 +142,7 @@ export function factsIn(when) {
     return out;
 }
 
-/** What is wrong with a fact, or null. Ids are checked against `known` only where it lists them. */
+/** What is wrong with a fact, or null. Skill ids are checked against `known` only where it lists them. */
 function factProblem(fact, known) {
     if (fact === FACT.ATTACK || fact === FACT.BEYOND_SENSES) return null;
     const [head, kind, ...rest] = fact.split(':');
@@ -152,10 +152,8 @@ function factProblem(fact, known) {
         return known.skills && !known.skills.has(id) ? `unknown skill ${show(id)} in ${show(fact)}` : null;
     }
     if (FACT_SIDES.includes(head) && id) {
-        if (kind === 'condition') {
-            return known.conditions && !known.conditions.has(id) ? `unknown condition ${show(id)} in ${show(fact)}` : null;
-        }
-        if (kind === 'stance' || kind === 'is') return null;
+        // A condition is any status id, homebrew ones included, so only its shape is checked (see DESIGN.md).
+        if (kind === 'condition' || kind === 'stance' || kind === 'is') return null;
     }
     return `unknown fact ${show(fact)} (known: ${FACT_SHAPES.join(', ')})`;
 }
@@ -187,8 +185,8 @@ function parseTerm(term, path, depth, known, fail) {
 /**
  * Check a `when` and build its clean copy in one pass.
  * @param {unknown} when
- * @param {{conditions?: Iterable<string> | null, skills?: Iterable<string> | null}} [known] valid ids, when known
- *   (the condition and skill ids facts name are then checked against them)
+ * @param {{skills?: Iterable<string> | null}} [known] valid skill ids, when known (the skill ids facts name are then
+ *   checked against them). Condition ids are never checked: any status id is allowed, so a typo reads as false
  * @returns {{when: unknown[] | null, problems: string[]}} `when` is null when there are problems; the problems
  *   say where (`when[1].or[0]: unknown fact "target:prone" (known: …)`)
  */
@@ -198,7 +196,7 @@ export function parsePredicate(when, known = {}) {
         problems.push('when: must be a list of terms that all have to hold, like ["test:attack", "target:condition:prone"]');
         return { when: null, problems };
     }
-    const knownSets = { conditions: toSet(known?.conditions), skills: toSet(known?.skills) };
+    const knownSets = { skills: toSet(known?.skills) };
     const fail = (message) => void problems.push(message);
     const clean = when.map((term, i) => parseTerm(term, `when[${i}]`, 1, knownSets, fail));
     return { when: problems.length ? null : clean, problems };
@@ -207,7 +205,7 @@ export function parsePredicate(when, known = {}) {
 /**
  * Check a `when`. Returns a list of problems (empty when valid).
  * @param {unknown} when
- * @param {{conditions?: Iterable<string> | null, skills?: Iterable<string> | null}} [known]
+ * @param {{skills?: Iterable<string> | null}} [known]
  * @returns {string[]}
  */
 export function validatePredicate(when, known) {

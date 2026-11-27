@@ -139,6 +139,20 @@ test('sideConditions: every table condition among the rows, once', () => {
     assert.deepEqual(sideConditions(null), []);
 });
 
+test('sideConditions: every status id an effect carries counts, table conditions first and unchanged', () => {
+    const rows = [
+        { effect: { id: 'a', statuses: new Set(['prone']) }, conditionId: 'prone' },
+        { effect: { id: 'b', statuses: new Set(['ep-hexed', 'ep-cursed']) }, conditionId: null },
+        { effect: { id: 'c', statuses: ['ep-hexed'] }, conditionId: null },
+        { effect: { id: 'd' }, conditionId: null },
+        { effect: { id: 'e', statuses: new Set(['']) }, conditionId: null },
+    ];
+    assert.deepEqual(sideConditions(rows), ['prone', 'ep-hexed', 'ep-cursed']);
+    assert.deepEqual([...rollFacts({ test: { context: 'Skill' }, roller: { conditions: sideConditions(rows) } })].sort(), [
+        'self:condition:ep-cursed', 'self:condition:ep-hexed', 'self:condition:prone',
+    ]);
+});
+
 /* --- The validator --- */
 
 test('validatePredicate: a list of facts, or and not', () => {
@@ -175,7 +189,6 @@ test('validatePredicate: problems say where', () => {
     const expected = [
         'when[0]: unknown fact "target:prone" (known: test:attack, test:skill:<skill id>, attack:melee, attack:ranged, ',
         'when[1]: unknown skill "stealthy" in "test:skill:stealthy"',
-        'when[2].or[0]: unknown condition "pinned" in "self:condition:pinned"',
         'when[2].or[1].not: unknown fact "attack:thrown"',
         'when[3].or: an empty "or" never holds',
         'when[4].or: must be a list of terms',
@@ -196,12 +209,20 @@ test('validatePredicate: problems say where', () => {
     expected.forEach((fragment, i) => assert.ok(problems[i].startsWith(fragment), `expected "${fragment}", got "${problems[i]}"`));
 });
 
-test('validatePredicate: condition and skill ids are only checked when the valid ones are given', () => {
+test('validatePredicate: skill ids are only checked when the valid ones are given; condition ids never are', () => {
     const when = ['test:skill:stealthy', 'target:condition:pinned'];
     assert.deepEqual(validatePredicate(when), []);
-    assert.deepEqual(validatePredicate(when, { skills: null, conditions: undefined }), []);
+    assert.deepEqual(validatePredicate(when, { skills: null }), []);
     assert.equal(validatePredicate(when, { skills: new Set(['prc']) }).length, 1);
-    assert.equal(validatePredicate(when, KNOWN).length, 2);
+    assert.equal(validatePredicate(when, KNOWN).length, 1, 'only the skill');
+});
+
+test('validatePredicate: any id-shaped status is a condition; an empty one and other shapes are still refused', () => {
+    assert.deepEqual(validatePredicate(['target:condition:my-homebrew', 'self:condition:ep-hexed', 'self:condition:a:b'], KNOWN), []);
+    assert.deepEqual(validatePredicate(['target:condition:no-such-status'], KNOWN), [], 'a typo is silent: it never matches');
+    assert.equal(validatePredicate(['self:condition:'], KNOWN).length, 1);
+    assert.equal(validatePredicate(['self:condition'], KNOWN).length, 1);
+    assert.equal(validatePredicate([{ or: [] }], KNOWN).length, 1);
 });
 
 test('parsePredicate: a clean copy that shares nothing with what was given', () => {
@@ -473,7 +494,6 @@ test('rules: a bad `when` is reported at its place, and the effect then falls ba
         'rolls[0]: when[1].or: an empty "or" never holds',
         'rolls[1]: when: must be a list of terms',
         'rolls[2]: when[0]: unknown skill "stealthy"',
-        'rolls[2]: when[1]: unknown condition "pinned"',
         'rolls[3]: unknown tests undefined',
         'rolls[4]: unknown tests "thrown"',
     ];
