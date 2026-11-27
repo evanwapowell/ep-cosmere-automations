@@ -659,6 +659,140 @@ the same thing with granted conditions: off-guard from prone can't be removed wh
   `longRest`. An injury can't be a table link, since it is an item and the player picks its effect, so it is tied
   when applied.
 
+## Rules on effects (schema 1)
+
+The first step of "portable rules" (issues #1, #2): the rules travel with the effect, as in PF2e, so a talent,
+stance, item or homebrew effect can carry "disadvantage on ranged attacks" or "half movement" without a change to
+this module's source. Until now an effect's *state* was on the effect (`value`, `sources`, `duration` in its flags)
+and its *rules* were looked up from the tables by status id.
+
+**This step only fixes the shape.** `scripts/logic/rules.js` has the validator, the normalizer and a converter
+from the tables; `FLAGS.RULES` names the flag. Nothing reads the flag yet, so nothing at the table changes. The
+resolver and the layers that read rules are the following steps (#3 to #6).
+
+### The shape
+
+An effect's own rules are plain data in `flags['ep-cosmere-automations'].rules`:
+
+```js
+{
+  schema: 1,
+  mechanics: [
+    { kind: 'movement', op: 'zero' | 'half' },
+    { kind: 'skillModifier', amount: -1, perStack: true, skills: 'all' | ['prc', …] },
+    { kind: 'attributeBonus', from: 'value' },               // attribute and amount from the effect's value
+    { kind: 'attributeBonus', attribute: 'str', amount: 1 },
+  ],
+  rolls: [{ who: 'self' | 'target', mode: 'advantage' | 'disadvantage',
+            tests: 'all' | 'attack' | 'melee' | 'ranged' | { skills: ['prc', …] },
+            beyondSenses: true, vsTarget: true, consume: true }],
+  links: ['slowed'],
+  longRest: 1,
+  endsWhen: ['attack', 'move'],
+  duration: ['untilUsed', 'endOfCurrentTurn'],
+}
+```
+
+| Field | Meaning | "None of this kind" |
+| --- | --- | --- |
+| `schema` | The version of this shape. Missing means 1, for good. | — |
+| `mechanics` | Number changes on the bearer, as records (below). | `[]` |
+| `rolls` | Advantage and disadvantage, in the roll layer's vocabulary ("Phase 3 as built"). `beyondSenses`, `vsTarget` and `consume` are allowed on any effect's rules; the condition *table* still refuses the last two. | `[]` |
+| `links` | Conditions (ids from the condition table) this effect brings with it and takes away again. | `[]` |
+| `longRest` | Stacks a long rest takes off; one ends an effect that doesn't stack. Stacks a source holds stay. | `0` |
+| `endsWhen` | Ends when its bearer does this: `attack` (makes an attack test), `move`. | `[]` |
+| `duration` | The *default* duration, used when the effect is created without one: a kind, a list of kinds (the first to trigger ends it), or `{ kinds, days }` for a number of days, as `api.apply`'s `duration` option takes. The running clock stays in the `duration` flag; changing the rule later doesn't restart it. | `[]` (or `'none'`) |
+
+What is *not* rules, and stays where it is: identity (name, summary, icon, value type, `stackable`,
+`multiInstance`, `phase`, the action or stance that creates a situational effect) on the tables, and state
+(`value`, `sources`, the duration clock) in the effect's other flags.
+
+### Defaults and overrides
+
+Rules resolve when they are read, never by copying the table onto effects (tracking issue, decision 1), so
+existing worlds need no migration and a fix to the table still reaches conditions already on actors.
+
+- **Per field, the effect's own rules win; otherwise the table's default applies.** The default is the entry for
+  the effect's single status (`data/conditions.js`) or for its `situational` flag (`data/situational.js`); other
+  effects have no defaults.
+- **A field that is set replaces the default as a whole.** Lists are not merged: an Exhausted effect with its own
+  `rolls` keeps the table's `mechanics` and `longRest`, and has exactly those roll rules. To add to a default,
+  repeat it.
+- **Not set is not the same as none.** A field that is missing (or `null`) means "use the default". An empty list
+  (for `longRest`, `0`) means "none of this kind", and overrides a default: `links: []` on a Prone effect is a
+  Prone that doesn't bring Slowed; `longRest: 0` on Exhausted is one a long rest leaves alone.
+- **An effect with invalid rules counts as having none of its own.** If its rules have any problem, all of them
+  are ignored and the defaults apply (the resolver, #3, warns once per effect); a half-understood set of rules is
+  never applied in part.
+
+### Mechanics as records
+
+The four named code paths (`MECHANICS` in `data/conditions.js`) become three kinds of record, so that a new
+number change is a record wherever one of the kinds covers it ("−2 to Perception" is
+`{ kind: 'skillModifier', amount: -2, skills: ['prc'] }`, no code). The tables keep their names for now;
+`MECHANIC_RECORDS` maps them and `entryToRules(entry)` converts a whole entry.
+
+| Table name | Record |
+| --- | --- |
+| `noMovement` | `{ kind: 'movement', op: 'zero' }` |
+| `halfMovement` | `{ kind: 'movement', op: 'half' }` |
+| `skillPenaltyPerStack` | `{ kind: 'skillModifier', amount: -1, perStack: true, skills: 'all' }` |
+| `attributeBonus` | `{ kind: 'attributeBonus', from: 'value' }` |
+
+- **`movement`** changes every movement rate after everything else. `zero` beats `half`; several `half` halve
+  once (rounded down), as today.
+- **`skillModifier`** adds `amount` (a whole number, not 0) to the modifier of every skill (`skills: 'all'`, the
+  default) or of the listed skills. With `perStack: true` it counts once per stack of the effect
+  (`system.stacks`; 1 for an effect that doesn't stack). Several add up.
+- **`attributeBonus`** adds to one attribute's bonus, which in the system feeds skills, movement and senses but
+  not defenses or maximum resources ("System facts"). Either `from: 'value'` (attribute and amount come from the
+  effect's value, as Enhanced's do) or a fixed `attribute` and `amount`; never both.
+
+A new *kind* (something none of the three can say) is one more parser in `MECHANIC_PARSERS` plus the code that
+applies it. Adding a kind, an `op` or an optional field doesn't change what existing rules mean, so it doesn't
+need a new schema (see "Versions").
+
+### Checking and normalizing
+
+`scripts/logic/rules.js`, pure, tested in `test/rules.test.js`:
+
+- `validateRules(rules, known?)` → a list of problems with their place (`mechanics[1]: unknown op "double"
+  (known: zero, half)`), empty when valid. Roll rules go through the roll layer's `ruleError`, durations through
+  `parseDurationSpec`. `known` may give the valid `conditions`, `skills` and `attributes` ids; ids are checked
+  against them only when given (the pure code has no system config; the glue has).
+- `normalizeRules(rules)` → a clean copy, or `null` when there are no rules or they aren't valid; it never throws.
+  The copy has `schema: 1`, every optional part of a record filled in (`perStack`, `skills`), flags on roll rules
+  only when true, no repeats in lists, and `duration` as a list of kinds (`{ kinds, days }` only with `days`).
+  Fields that aren't set stay absent. Normalized rules are valid rules, and normalizing twice changes nothing.
+- `parseRules(rules, known?)` → `{ ok, rules, problems }`, both of the above in one pass.
+- `entryToRules(entry)` → the normalized defaults of a table entry (only what the entry gives; a marker
+  condition is `{ schema: 1 }`). It throws for a broken entry: that is a mistake in the module's own tables, and
+  the tests convert every entry of both.
+- `hasRules(rules)` → whether normalized rules say anything, so an effect with empty rules can be skipped.
+
+**Strict on purpose:** an unknown field or kind is a problem, not something to skip. Rules written for a
+later version may qualify a rule in a way this version can't read (a `when` on a roll rule, #7), and applying
+the rule without its qualifier would be wrong. Reporting it means the effect falls back to the defaults instead.
+It also catches the typos of rules written by hand (`roll` for `rolls`). No value is coerced: `amount: "1"` is a
+problem.
+
+### Versions
+
+- `schema` is optional and means 1 when missing. `normalizeRules` always writes it.
+- Any other value is rejected with a message naming the schema this version reads, and nothing else in those
+  rules is judged.
+- **Additions don't bump the schema:** a new optional field, mechanic kind or `op`. An older version of the
+  module reports them as unknown and uses the defaults for that effect, which is the safe failure.
+- **A change to what existing rules mean, or to the shape of an existing field, bumps it,** and `normalizeRules`
+  then upgrades older schemas, so rules stored in worlds keep working.
+
+### Left out of schema 1
+
+Conditions on a roll rule beyond `tests`, `beyondSenses` and `vsTarget` (predicates, #7); numbers added to a
+roll; `movement` by a fixed amount or for one movement type; links to effects that aren't table conditions;
+whose turns a default duration counts (`turnOf`, always the bearer's). Each can be added as described under
+"Versions".
+
 ## Development
 
 **Layout**
