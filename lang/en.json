@@ -50,7 +50,11 @@
       },
       "rolls": {
         "name": "Advantage and disadvantage on tests",
-        "hint": "Full: conditions and situational effects (yours and your target's) set the test's advantage or disadvantage; the roll dialog starts with it selected, so the player can change it. Remind: the chat card lists them, the roll is unchanged. Each condition's own setting must also be full."
+        "hint": "Full: conditions, situational effects, stances and effects with rules of their own (yours and your target's) set the test's advantage or disadvantage; the roll dialog starts with it selected, so the player can change it. Remind: the chat card lists them, the roll is unchanged. Each condition's own setting, and \"Rules on other effects\" for other effects, must also be full."
+      },
+      "otherEffects": {
+        "name": "Rules on other effects",
+        "hint": "Effects that aren't one of the module's conditions or situational effects (a talent's, an item's, a homebrew effect) but carry rules of their own. Full: their rules apply. Remind only: they change nothing (the chat card of a test still lists their advantages and disadvantages)."
       },
       "actionEffects": {
         "name": "Effects from Dodge, Brace and Gain Advantage",

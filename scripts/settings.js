@@ -14,6 +14,7 @@ export const SETTINGS = Object.freeze({
     SCENE_RECHARGE: 'sceneRecharge',
     ROLLS: 'rolls',
     ACTION_EFFECTS: 'actionEffects',
+    OTHER_EFFECTS: 'otherEffects',
     conditionKey: (id) => `condition.${id}`,
 });
 
@@ -132,7 +133,7 @@ export function registerSettings() {
         hint: t(
             'settings.rolls.hint',
             null,
-            "Full: conditions and situational effects (yours and your target's) set the test's advantage or disadvantage; the roll dialog starts with it selected, so the player can change it. Remind: the chat card lists them, the roll is unchanged. Each condition's own setting must also be full.",
+            "Full: conditions, situational effects, stances and effects with rules of their own (yours and your target's) set the test's advantage or disadvantage; the roll dialog starts with it selected, so the player can change it. Remind: the chat card lists them, the roll is unchanged. Each condition's own setting, and \"Rules on other effects\" for other effects, must also be full.",
         ),
         scope: 'world',
         config: true,
@@ -153,6 +154,21 @@ export function registerSettings() {
         type: String,
         choices: modeChoices(),
         default: MODES.REMIND,
+    });
+
+    game.settings.register(MODULE_ID, SETTINGS.OTHER_EFFECTS, {
+        name: t('settings.otherEffects.name', null, 'Rules on other effects'),
+        hint: t(
+            'settings.otherEffects.hint',
+            null,
+            "Effects that aren't one of the module's conditions or situational effects (a talent's, an item's, a homebrew effect) but carry rules of their own. Full: their rules apply. Remind only: they change nothing (the chat card of a test still lists their advantages and disadvantages).",
+        ),
+        scope: 'world',
+        config: true,
+        type: String,
+        choices: modeChoices(),
+        default: MODES.REMIND,
+        onChange: refreshActors,
     });
 
     for (const entry of AUTOMATED_CONDITIONS) {

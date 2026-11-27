@@ -84,10 +84,94 @@ export function ruleMatchesTest(rule, test) {
     return false;
 }
 
-/** The roll rules of an effect: its resolved rules' if given, else the table entry's defaults. */
-function rollsOf(rules, entry) {
-    if (rules) return rules.rolls ?? [];
-    return entry ? (defaultRules(entry).rolls ?? []) : [];
+/** The modifier key (and mode key) of a source that is not one of the tables' entries: see `rollSources`. */
+export const effectKey = (effectId) => `effect:${effectId}`;
+
+/** The mode key of a situational or stance entry of data/situational.js. */
+export const situationalKey = (id) => `situational:${id}`;
+
+/** The table entry whose rules a stance gives (data/situational.js `stance`), or null. */
+export function stanceEntry(stanceId, situational) {
+    if (!stanceId) return null;
+    return Object.values(situational ?? {}).find((entry) => entry.stance === stanceId) ?? null;
+}
+
+/**
+ * Where a test's modifiers can come from: one source per effect that has roll rules.
+ *
+ * @param {Row[]} rows an actor's effects with their resolved rules (`ruleEffects` in scripts/rules.js)
+ * @param {{conditions: Record<string, object>, situational: Record<string, object>}} tables
+ *   the condition and situational tables by id, for the labels and keys of the effects they describe
+ * @returns {Source[]}
+ *
+ * @typedef {{effect: {id: string, name?: string}, rules: object, conditionId?: string | null,
+ *   situationalId?: string | null, stanceId?: string | null, value?: object | null}} Row
+ *   stanceId: the talent id a stance marker stands for (scripts/stances.js)
+ * @typedef {{key: string, modeKey: string, label: string, rules: object, effectId?: string, value?: object | null}} Source
+ *   key: what counts once: the condition id for a condition (several instances of one condition count once),
+ *     `stance:<talent id>` for a stance, otherwise the effect id;
+ *   modeKey: the modifier's key, which `modeOf` reads: the condition id, `situational:<id>` for the situational
+ *     table's entries (stances included), `effect:<effect id>` for any other effect;
+ *   label: the table's name for the tables' entries, the effect's own name for any other effect;
+ *   effectId: the effect a `consume` rule ends
+ */
+export function rollSources(rows, { conditions, situational }) {
+    const out = [];
+    for (const { effect, rules, conditionId, situationalId, stanceId, value } of rows ?? []) {
+        if (!rules?.rolls?.length) continue;
+        const base = { rules, effectId: effect.id, value: value ?? null };
+        const name = effect.name ?? effect.id;
+        if (conditionId) {
+            out.push({ ...base, key: conditionId, modeKey: conditionId, label: conditions[conditionId]?.name ?? name });
+        } else if (situationalId) {
+            out.push({ ...base, key: effect.id, modeKey: situationalKey(situationalId), label: situational[situationalId]?.name ?? name });
+        } else if (stanceId) {
+            const entry = stanceEntry(stanceId, situational);
+            out.push({
+                ...base,
+                key: `stance:${stanceId}`,
+                modeKey: entry ? situationalKey(entry.id) : effectKey(effect.id),
+                label: entry?.name ?? name,
+            });
+        } else {
+            out.push({ ...base, key: effect.id, modeKey: effectKey(effect.id), label: name });
+        }
+    }
+    return out;
+}
+
+/**
+ * The source a stance gives from the table alone, for an actor in a stance with no marker effect to carry it
+ * (stances not in full mode, or the stance set by something other than this module).
+ * @param {string | null | undefined} stanceId the actor's stance (the talent's system id)
+ * @param {Record<string, object>} situational the situational table by id
+ * @returns {Source | null}
+ */
+export function stanceSource(stanceId, situational) {
+    const entry = stanceEntry(stanceId, situational);
+    if (!entry) return null;
+    const rules = defaultRules(entry);
+    if (!rules.rolls?.length) return null;
+    return { key: `stance:${stanceId}`, modeKey: situationalKey(entry.id), label: entry.name, rules, value: null };
+}
+
+/**
+ * Every source of one side: its effects' (`rollSources`), and its stance's from the table when no marker effect
+ * stands for that stance. A marker counts only for the stance the actor is in (one left over from another stance
+ * is ignored), and then its rules decide, even when its own rules turn the stance's roll rules off.
+ * @param {Row[]} rows the actor's effects, those with no rules included (`ruleEffects(actor, {includeEmpty: true})`)
+ * @param {{stance?: string | null, conditions: Record<string, object>, situational: Record<string, object>}} options
+ *   stance: the actor's stance (the talent's system id), if any
+ * @returns {Source[]}
+ */
+export function sideSources(rows, { stance = null, conditions, situational }) {
+    const current = (rows ?? []).filter((row) => !row.stanceId || row.stanceId === stance);
+    const sources = rollSources(current, { conditions, situational });
+    if (stance && !current.some((row) => row.stanceId === stance)) {
+        const fromTable = stanceSource(stance, situational);
+        if (fromTable) sources.push(fromTable);
+    }
+    return sources;
 }
 
 /**
@@ -96,31 +180,18 @@ function rollsOf(rules, entry) {
  * @param {object} input
  * @param {Side} input.roller
  * @param {Side | null} input.target  the roller's single target, or null
- * @param {{context: string, skill?: string | null, attackType?: string | null}} input.test
- * @param {object} sources
- * @param {Record<string, object>} sources.conditions  condition table by id
- * @param {Record<string, object>} sources.situational situational table by id
- * @param {(key: string) => 'full' | 'remind' | 'off'} sources.modeOf  mode of a condition id or 'situational:<id>'
+ * @param {{context: string, skill?: string | null, attackType?: string | null, beyondSenses?: boolean | null}} input.test
+ * @param {object} options
+ * @param {(key: string) => 'full' | 'remind' | 'off'} options.modeOf  mode of a source's `modeKey`
  * @returns {Modifier[]}
  *
- * @typedef {{ uuid: string, name: string, conditions: (string | {id: string, rules?: object})[],
- *   situational: {id: string, effectId: string, value?: object, rules?: object}[], stance?: string | null }} Side
- *   `rules`: the effect's resolved rules (scripts/rules.js); without them the table's defaults for the id are used.
- *   The stance's roll rules always come from the table (stances are not effects; folded in by #5).
+ * @typedef {{ uuid: string, name: string, sources: Source[] }} Side
  * @typedef {{ key: string, label: string, mode: string, active: boolean, side: 'self' | 'target',
  *   consume?: {actorUuid: string, effectId: string} }} Modifier
- *   active: false when the source is in remind-only mode (shown, not applied)
+ *   key: the source's `modeKey`; active: false when the source is in remind-only mode (shown, not applied)
  */
-export function collectModifiers({ roller, target, test }, { conditions, situational, modeOf }) {
+export function collectModifiers({ roller, target, test }, { modeOf }) {
     const out = [];
-    const add = (key, label, rule, side, owner, effectId) => {
-        const mode = modeOf(key);
-        if (mode === 'off') return;
-        const mod = { key, label, mode: rule.mode, active: mode === 'full', side };
-        if (rule.consume && effectId) mod.consume = { actorUuid: owner.uuid, effectId };
-        out.push(mod);
-    };
-
     const sides = [
         ['self', roller],
         ['target', target],
@@ -128,35 +199,34 @@ export function collectModifiers({ roller, target, test }, { conditions, situati
     for (const [who, side] of sides) {
         if (!side) continue;
         const seen = new Set();
-        for (const item of side.conditions ?? []) {
-            const id = typeof item === 'string' ? item : item.id;
-            if (seen.has(id)) continue; // several instances of a condition count once
-            seen.add(id);
-            for (const rule of rollsOf(item.rules, conditions[id])) {
+        for (const source of side.sources ?? []) {
+            if (seen.has(source.key)) continue; // several instances of a condition count once
+            seen.add(source.key);
+            for (const rule of source.rules?.rolls ?? []) {
                 if (rule.who !== who || !ruleMatchesTest(rule, test)) continue;
-                add(id, conditions[id].name, rule, who, side);
-            }
-        }
-        for (const effect of side.situational ?? []) {
-            const entry = situational[effect.id];
-            for (const rule of rollsOf(effect.rules, entry)) {
-                if (rule.who !== who || !ruleMatchesTest(rule, test)) continue;
-                if (rule.vsTarget && (!target || effect.value?.targetUuid !== target.uuid)) continue;
-                const label = rule.vsTarget && effect.value?.targetName ? `${entry.name} (${effect.value.targetName})` : entry.name;
-                add(`situational:${entry.id}`, label, rule, who, side, effect.effectId);
-            }
-        }
-        if (side.stance) {
-            for (const entry of Object.values(situational)) {
-                if (entry.stance !== side.stance) continue;
-                for (const rule of rollsOf(null, entry)) {
-                    if (rule.who !== who || !ruleMatchesTest(rule, test)) continue;
-                    add(`situational:${entry.id}`, entry.name, rule, who, side);
-                }
+                // Only on a test against the enemy stored in the effect's value (Advantage gained).
+                if (rule.vsTarget && (!target || source.value?.targetUuid !== target.uuid)) continue;
+                const mode = modeOf(source.modeKey);
+                if (mode === 'off') continue;
+                const targetName = rule.vsTarget ? source.value?.targetName : null;
+                const mod = {
+                    key: source.modeKey,
+                    label: targetName ? `${source.label} (${targetName})` : source.label,
+                    mode: rule.mode,
+                    active: mode === 'full',
+                    side: who,
+                };
+                if (rule.consume && source.effectId) mod.consume = { actorUuid: side.uuid, effectId: source.effectId };
+                out.push(mod);
             }
         }
     }
     return out;
+}
+
+/** Whether any of a side's roll rules needs to know if the target is beyond the roller's senses (Blind). */
+export function needsSensesRange(side) {
+    return !!side?.sources?.some((source) => source.rules?.rolls?.some((rule) => rule.beyondSenses));
 }
 
 /**
