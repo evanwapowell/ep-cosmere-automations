@@ -41,6 +41,9 @@ export const MECHANICS = Object.freeze({
  * - tests: 'all' | 'attack' | 'melee' | 'ranged' | { skills: [skill ids] }
  * - beyondSenses: (who: 'self' only) only when the target's token is farther than the roller's senses range
  *          (Senseblind: within that range it still senses things); skipped when that can't be measured.
+ * - when:  further conditions, as a list of facts about the test that must all hold, with { or: [...] } and
+ *          { not: ... } (scripts/logic/predicates.js lists the facts). `tests` and `beyondSenses` are shorthand
+ *          for the common ones, and `tests` may be left out of a rule that has a `when`.
  * Situational effects (data/situational.js) add:
  * - vsTarget: only on a test against the target stored in the effect's value;
  * - consume:  the effect is used up by the test.

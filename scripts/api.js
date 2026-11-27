@@ -13,8 +13,9 @@ import { normalizeValue } from './logic/values.js';
 import { conditionMode } from './settings.js';
 import { endStance, syncStanceMarker } from './stances.js';
 import { createSituational, situationalEffects } from './situational.js';
-import { modifiersFor } from './rolls.js';
-import { netMode } from './logic/rolls.js';
+import { modeOf, situationFor } from './rolls.js';
+import { rollFacts } from './logic/predicates.js';
+import { collectModifiers, netMode } from './logic/rolls.js';
 import { SITUATIONAL } from '../data/situational.js';
 import { systemChoices } from './util.js';
 
@@ -220,10 +221,14 @@ function marks(actor) {
  * Preview the advantages and disadvantages a test would get, without rolling.
  * @param {Actor} actor the roller
  * @param {{target?: Actor, context?: 'Skill' | 'Item' | 'Attack', skill?: string, attackType?: 'melee' | 'ranged', base?: string}} [test]
+ * @returns {{modifiers: object[], mode: string, facts: string[]}} facts: what a roll rule's `when` can ask about
+ *   this test, sorted ("test:attack", "target:condition:prone", …). No distance is measured for a preview, so
+ *   "target:beyond-senses" is never among them.
  */
 function modifiers(actor, { target = null, context = 'Skill', skill = null, attackType = null, base = 'none' } = {}) {
-    const mods = modifiersFor(actor, { context, skill, attackType }, { target: target ?? null });
-    return { modifiers: mods, mode: netMode(base, mods) };
+    const situation = situationFor(actor, { context, skill, attackType }, { target: target ?? null });
+    const mods = collectModifiers(situation, { modeOf });
+    return { modifiers: mods, mode: netMode(base, mods), facts: [...rollFacts(situation)].sort() };
 }
 
 export function buildApi() {
