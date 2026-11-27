@@ -133,6 +133,28 @@
       "endOfNextTurn": "Until the end of its next turn",
       "endOfScene": "Until the end of the scene",
       "longRest": "Until a long rest"
+    },
+    "rules": {
+      "control": "Rules (EP Cosmere Automations)",
+      "title": "Rules: {effect}",
+      "now": "What it does now",
+      "defaultsFrom": "Defaults: the module's table entry for {kind} \"{id}\".",
+      "noDefaults": "This effect has no defaults from the module's tables.",
+      "nothing": "Nothing: this effect has no rules.",
+      "field": "Field",
+      "from": "From",
+      "value": "Value",
+      "fromEffect": "this effect",
+      "fromDefault": "default",
+      "ignored": "The rules saved on this effect are ignored (the defaults apply) because:",
+      "own": "Its own rules (JSON)",
+      "ownHint": "A field set here replaces the default as a whole; a field left out keeps the default. Blank: no rules of its own.",
+      "save": "Save",
+      "reset": "Reset to defaults",
+      "cancel": "Cancel",
+      "saved": "{effect}: rules saved.",
+      "wasReset": "{effect}: rules reset to the defaults.",
+      "notSaved": "Rules not saved: {problems}"
     }
   }
 }

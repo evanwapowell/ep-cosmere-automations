@@ -78,6 +78,18 @@ For each: what to do → what should happen. Record pass / fail / note.
     zz Brute" on Kal; Kal's next test against the Brute has advantage, then the effect is gone.
 21. Kal in Flamestance → Intimidation test with advantage.
 
+**Authoring** (#8; as GM; rolls and "Rules on other effects" at full)
+22. Open an effect's sheet (Prone on `zz Kal`): the header's controls menu (⋮) has "Rules (EP Cosmere
+    Automations)"; it opens one dialog showing the resolved rules, every field "default". Log in as a player: no
+    such entry.
+23. In the editor type `{"mechanics": [{"kind": "teleport"}]}` → the problem is listed under it and Save is
+    disabled; same for text that isn't JSON.
+24. Create a plain effect "zz Mire" on `zz Kal` and give it, through the dialog,
+    `{"mechanics": [{"kind": "movement", "op": "half"}], "rolls": [{"who": "self", "mode": "advantage",
+    "tests": {"skills": ["ath"]}}]}` → Kal's movement halves and Athletics opens with Advantage.
+25. Slowed on `zz Kal`: give it `{"mechanics": []}` → movement is back to normal; "Reset to defaults" → halved
+    again, and the dialog shows every field as "default".
+
 ## 5. Clean up
 
 Delete the `zz` scene, the `zz` actors and the test chat messages. Put the module settings back to what the

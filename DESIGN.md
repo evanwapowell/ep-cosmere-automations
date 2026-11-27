@@ -1034,6 +1034,33 @@ with Disadvantage outside Stonestance and not in it; `api.modifiers(kal, { targe
 attackType: 'melee' }).facts` lists what was seen; an effect whose `when` has a typo warns once in the console
 and changes nothing. The live check is part of step 8 (#9).
 
+### Authoring (step 7, #8)
+
+**API.** `api.rules(effect)` explains an effect's rules: `rules` (resolved, what the module applies), `own` (its
+own, normalized; null when none or invalid), `stored` (the flag as saved, valid or not), `defaults` (the table's),
+`from` (for each resolved field, `'effect'` or `'default'`), `problems` (why its own rules are ignored) and
+`defaultsFrom` (`{condition}`, `{situational}`, `{stance}` or null). `api.setRules(effect, rules)` validates and
+saves the clean copy, returning `{ok, problems, rules}` and never throwing on invalid rules; `null` takes the own
+rules away. It unsets the flag before writing it, because Foundry merges an object written into a flag with the one
+already there and an old field would otherwise survive. `api.validateRules(rules)` checks without saving. Checks
+made here know the system's skills and attributes (`CONFIG.COSMERE`), so a misspelt skill is caught when the rules
+are written, not ignored at roll time.
+
+**The sheet control.** cosmere-rpg 3.1.2 registers no sheet of its own for Active Effects (`src/index.ts` only
+registers actor and item sheets), so effects open in Foundry v13's core `ActiveEffectConfig`, an ApplicationV2
+sheet. ApplicationV2 calls `getHeaderControls<Class>` for each class in the sheet's chain when it builds the
+header's controls menu, so `scripts/authoring.js` adds a "Rules" entry (GM only) from
+`getHeaderControlsActiveEffectConfig`. The entry carries both `onClick` and an `action` registered in the sheet's
+`options.actions`; one open dialog per effect, so if both fire only one opens. The dialog (DialogV2) shows the
+resolved rules field by field, a JSON editor for the effect's own rules checked as it is typed (Save disabled
+while invalid) and "Reset to defaults". A form editor is a later step.
+
+**Links on an existing effect.** Links are followed when an effect is created. Giving `links` to an effect that is
+already on an actor brings nothing now; the linked conditions come the next time the effect is applied.
+
+Not yet seen in a live world: the control on the real sheet, the dialog's rendering and Save button handling.
+The check is in docs/LIVE-PASS.md (checks 22–25).
+
 ### Left out of schema 1
 
 Numbers added to a roll; conditions on mechanics (a `when` on a mechanic record); `movement` by a fixed amount
