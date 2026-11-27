@@ -732,6 +732,9 @@ source per effect of the actor's `ruleEffects` that has roll rules (`rollSources
   roll's config, so listed-skill modifiers count too. A bonus is added back as `+ n` (`skillPenaltyFormula`), never
   as `- -n`.
 
+**Step 6 (#7) gave roll rules a general condition, `when`** ("Predicates on roll rules", below). The fixed fields
+(`tests`, `beyondSenses`, `vsTarget`) stay as shorthand for it.
+
 ### The shape
 
 An effect's own rules are plain data in `flags['ep-cosmere-automations'].rules`:
@@ -747,6 +750,7 @@ An effect's own rules are plain data in `flags['ep-cosmere-automations'].rules`:
   ],
   rolls: [{ who: 'self' | 'target', mode: 'advantage' | 'disadvantage',
             tests: 'all' | 'attack' | 'melee' | 'ranged' | { skills: ['prc', …] },
+            when: ['test:attack', { or: ['target:condition:stunned', …] }, { not: 'self:condition:prone' }],
             beyondSenses: true, vsTarget: true, consume: true }],
   links: ['slowed'],
   longRest: 1,
@@ -759,7 +763,7 @@ An effect's own rules are plain data in `flags['ep-cosmere-automations'].rules`:
 | --- | --- | --- |
 | `schema` | The version of this shape. Missing means 1, for good. | — |
 | `mechanics` | Number changes on the bearer, as records (below). | `[]` |
-| `rolls` | Advantage and disadvantage, in the roll layer's vocabulary ("Phase 3 as built"). `beyondSenses`, `vsTarget` and `consume` are allowed on any effect's rules; the condition *table* still refuses the last two. | `[]` |
+| `rolls` | Advantage and disadvantage, in the roll layer's vocabulary ("Phase 3 as built"). `when` adds any condition over the facts of the test ("Predicates on roll rules"); a rule with a `when` may leave `tests` out. `beyondSenses`, `vsTarget` and `consume` are allowed on any effect's rules; the condition *table* still refuses the last two. | `[]` |
 | `links` | Conditions (ids from the condition table) this effect brings with it and takes away again. | `[]` |
 | `longRest` | Stacks a long rest takes off; one ends an effect that doesn't stack. Stacks a source holds stay. | `0` |
 | `endsWhen` | Ends when its bearer does this: `attack` (makes an attack test), `move`. | `[]` |
@@ -833,8 +837,9 @@ need a new schema (see "Versions").
 - `hasRules(rules)` → whether normalized rules say anything, so an effect with empty rules can be skipped.
 
 **Strict on purpose:** an unknown field or kind is a problem, not something to skip. Rules written for a
-later version may qualify a rule in a way this version can't read (a `when` on a roll rule, #7), and applying
-the rule without its qualifier would be wrong. Reporting it means the effect falls back to the defaults instead.
+later version may qualify a rule in a way this version can't read (a new field on a roll rule, or a fact in its
+`when` that this version doesn't have), and applying the rule without its qualifier would be wrong. Reporting it
+means the effect falls back to the defaults instead.
 It also catches the typos of rules written by hand (`roll` for `rolls`). No value is coerced: `amount: "1"` is a
 problem.
 
@@ -843,8 +848,9 @@ problem.
 - `schema` is optional and means 1 when missing. `normalizeRules` always writes it.
 - Any other value is rejected with a message naming the schema this version reads, and nothing else in those
   rules is judged.
-- **Additions don't bump the schema:** a new optional field, mechanic kind or `op`. An older version of the
-  module reports them as unknown and uses the defaults for that effect, which is the safe failure.
+- **Additions don't bump the schema:** a new optional field, mechanic kind or `op`, or a new fact for `when`. An
+  older version of the module reports them as unknown and uses the defaults for that effect, which is the safe
+  failure. `when` itself came this way (#7): schema 1 before and after.
 - **A change to what existing rules mean, or to the shape of an existing field, bumps it,** and `normalizeRules`
   then upgrades older schemas, so rules stored in worlds keep working.
 
@@ -893,12 +899,145 @@ test's skill since #5). With a bonus in full mode it can be negative; the roll l
 
 Not yet verified in Foundry: the live check is part of step 8 (#9).
 
+### Predicates on roll rules (step 6, #7)
+
+A roll rule can carry `when`: a condition over the **facts** of the test, in the spirit of PF2e's predicates over
+roll options, so a new situation is data on an effect and not a new branch in the roll layer. Pure code in
+`scripts/logic/predicates.js`, tested in `test/predicates.test.js`.
+
+**Facts.** Flat strings, built once per test from the test and its two sides (`rollFacts`); every rule of both
+sides is judged against the same set. `self` is always the one making the test and `target` the one it is made
+against, whichever of the two carries the rule: in a `who: 'target'` rule (Prone's), the effect's bearer is
+`target` and the attacker is `self`.
+
+| Fact | True when |
+| --- | --- |
+| `test:attack` | The test is an attack test. |
+| `test:skill:<skill id>` | The test uses that skill (`test:skill:prc`). An attack has its weapon skill too. |
+| `attack:melee`, `attack:ranged` | The attack is of that kind (`attackTypeOf`); neither when it can't be told. Only on an attack test. |
+| `self:condition:<condition id>` | The roller has that condition: an id of the condition table, on an enabled effect. A condition with no rules of its own (Surprised) counts, and so does one whose setting is remind-only or off: the fact says it is there, not that the module applies it. |
+| `self:stance:<stance id>` | The roller is in that stance (the stance talent's system id, from the system's `mode.stance` flag). |
+| `self:is:<actor uuid>` | Who the roller is. |
+| `target:condition:<id>`, `target:stance:<id>`, `target:is:<uuid>` | The same three for the roller's single target. |
+| `target:beyond-senses` | The target was measured to be farther away than the roller's senses reach. The distance is only measured when a rule of either side names this fact. |
+
+A fact that isn't known to be true is not there, so it reads as false: with no single target there are no
+`target:` facts at all, a distance that couldn't be measured is not "beyond", and `{ not: 'target:beyond-senses' }`
+therefore also holds when nothing could be measured. `api.modifiers(actor, {…})` returns the test's `facts` next
+to its modifiers, to see what a rule can ask about.
+
+**`when`.** A list of terms that must all hold. A term is:
+
+| Term | Holds when |
+| --- | --- |
+| `'test:attack'` (a string) | The test has that fact. |
+| `{ or: [term, …] }` | Any of them holds. |
+| `{ not: term }` | It doesn't. |
+| `[term, …]` (a list inside another term) | All of them hold: `{ or: ['attack:ranged', ['attack:melee', 'target:condition:prone']] }`. |
+
+That is the whole grammar. A list is "and" wherever it stands, so there is no `and` keyword, and the three forms
+can say any combination of facts. Nothing in it reads numbers (stacks, distances in feet) or the effect's value.
+
+- **Evaluating** (`holds(when, facts)`) never throws. A fact that isn't in the set is false, also one this version
+  has never heard of; anything that isn't a term is false too. No `when`, or an empty one, always holds.
+- **Checking** (`validatePredicate(when, known?)`, and through it `ruleError` and `validateRules`) is strict, like
+  the rest of the rules: `when` must be a list; a fact must have one of the shapes above (`target:prone` is
+  reported with the list of known shapes); condition and skill ids are checked when the valid ones are known (the
+  glue knows the table's conditions, so `self:condition:<an id the table doesn't have>` is refused); an empty `or`,
+  an empty list inside a term, a term with another key (`and`), and terms nested more than 8 deep are problems.
+  As with every other problem, the effect's own rules are then ignored as a whole and its defaults apply.
+- **Normalizing** keeps `when` as written (a clean copy, nothing reordered or flattened); an empty `when` is
+  dropped, and `tests` is filled in as `'all'` when the rule left it out.
+
+**The fixed fields are shorthand.** `rulePredicate(rule, value)` turns a whole rule into one `when`, and the roll
+layer evaluates only that (`ruleApplies`; `collectModifiers` builds the facts once per test). A rule's own `when`
+is added to what its shorthand says: both have to hold.
+
+| Field | Compiles to |
+| --- | --- |
+| `tests: 'all'` (or left out, with a `when`) | nothing |
+| `tests: 'attack'` | `'test:attack'` |
+| `tests: 'melee'` / `'ranged'` | `'test:attack', 'attack:melee'` / `'attack:ranged'` |
+| `tests: { skills: ['prc'] }` | `'test:skill:prc'` |
+| `tests: { skills: ['prc', 'inm'] }` | `{ or: ['test:skill:prc', 'test:skill:inm'] }` |
+| `beyondSenses: true` | `'target:beyond-senses'` |
+| `vsTarget: true` | `'target:is:<the uuid in the effect's value>'`; a term that never holds when none is stored |
+
+`vsTarget` is the one field that reads the effect's value, so it stays a field: a `when` written by hand can name
+a fixed actor (`target:is:Actor.abc`), not "the stored one". `consume` is not a condition and is untouched. The
+tables are not rewritten; their entries may use `when` like any rule. The shorthand's own limits stay
+(`beyondSenses` and `vsTarget` only with `who: 'self'`); a `when` may name `target:beyond-senses` in a rule the
+target carries, and the distance is then measured for it as well.
+
+**Three examples** (homebrew effects, to show the forms; none is a handbook rule):
+
+```js
+// 1. On the roller: an advantage on attacks against a target that is Stunned or Surprised.
+{ who: 'self', mode: 'advantage',
+  when: ['test:attack', { or: ['target:condition:stunned', 'target:condition:surprised'] }] }
+
+// 2. On the target, narrowing the table's Prone: melee attacks against it gain an advantage, unless the
+//    attacker is Prone as well. `self` is the attacker here; `tests` and `when` both have to hold.
+{ who: 'target', mode: 'advantage', tests: 'melee', when: [{ not: 'self:condition:prone' }] }
+
+// 3. On the roller: a disadvantage on Athletics and Perception tests while not in Stonestance.
+{ who: 'self', mode: 'disadvantage',
+  when: [{ or: ['test:skill:ath', 'test:skill:prc'] }, { not: 'self:stance:stonestance' }] }
+```
+
+**Rules it was checked against.** Every roll rule this module has recorded from the handbook (the two tables and
+the notes in this document; ch. 9–10), asking whether `when` can say it and whether it needs more than the three
+forms:
+
+| Rule | As a predicate | Needs |
+| --- | --- | --- |
+| Restrained, Empowered: every test | (nothing) | — |
+| Disoriented: Perception tests; Flamestance: Intimidation tests | `test:skill:prc`; `test:skill:inm` | — |
+| Prone: melee attacks against it; Flying: ranged attacks against it | `test:attack`, `attack:melee`; `attack:ranged` | — |
+| Hidden, Invisible, Dodging, Bracing: attacks against it | `test:attack` | — |
+| Senseblind: its attacks on a target beyond its senses range | `test:attack`, `target:beyond-senses` | — |
+| Advantage gained: its next test against that enemy | `target:is:<stored uuid>` | the stored target: `vsTarget` |
+| Restrained: "except tests to escape" | `{ not: … }` over a fact for an escape test | a new fact; the system doesn't say which tests are escapes. Stays with the roll dialog. |
+| Hidden, Invisible: "from someone who cannot sense it" | a fact for "the roller senses the target" | a new fact (detection is Foundry core's). Stays with the roll dialog. |
+| Bracing: "from the other side of that cover" | a fact about cover between the two tokens | a new fact; the GM's call today. |
+| Advantage gained: "a different skill from the test that gained it" | `{ not: 'test:skill:<that skill>' }` | the gaining skill stored in the effect's value and read from there, as `vsTarget` reads the target: a second value-reading field (or a placeholder in a fact). Not built: the module doesn't record that skill yet. |
+| Stonestance, Vigilant Stance, Flamestance's extra action | — | not advantage or disadvantage (action and focus costs): reminders, outside the roll layer |
+| Decisive Command and the other command-die talents | — | a die added to the roll: a numeric modifier, out of scope here |
+
+Every rule that is advantage or disadvantage fits the three forms; what the open ones lack is a fact, never
+grammar, and a new fact is an addition (see "Versions"). None of them needs a number comparison.
+
+**Schema.** Not bumped. `when` is a new optional field, and leaving `tests` out is only allowed together with it,
+so every rule stored before reads exactly as it did. A version of the module from before #7 refuses rules with a
+`when` (an unknown field) and uses that effect's defaults.
+
+**Possible follow-ups, not built:**
+
+- **Predicates on mechanics:** a `when` on a mechanic record ("half movement while not in a stance"). Mechanics
+  are derived when the actor is prepared, not per test, so they would get facts about the bearer only
+  (`self:condition:…`, `self:stance:…`), and a condition's own mechanic changing another's facts needs an order.
+- **Numeric modifiers on rolls** (a bonus or a die added to a test, as the command die needs), with the same
+  `when`.
+- **Facts that need new data:** an escape test, whether the roller senses the target, cover, a weapon's range
+  band, "there is a single target" (for a `not` over `target:` facts, which today also holds with no target), an
+  effect that isn't a table condition (`self:effect:<name>`), stacks.
+- **Reading the effect's value** in a fact (the gaining skill above).
+
+**Not yet verified in Foundry.** The facts come from data the roll layer already read before #7 (the roll's
+context, skill and attack type, each side's effects, the `mode.stance` flag, the measured distance), so no new
+system internals are involved, but only the unit tests and the fake Foundry have run this. To try live (rolls and
+"Rules on other effects" at full, on a `zz` scene): an effect with example 1 on `zz Kal`, the Brute Surprised and
+targeted → the attack dialog opens with Advantage, and without Surprised it doesn't; example 3 → Athletics opens
+with Disadvantage outside Stonestance and not in it; `api.modifiers(kal, { target: brute, context: 'Attack',
+attackType: 'melee' }).facts` lists what was seen; an effect whose `when` has a typo warns once in the console
+and changes nothing. The live check is part of step 8 (#9).
+
 ### Left out of schema 1
 
-Conditions on a roll rule beyond `tests`, `beyondSenses` and `vsTarget` (predicates, #7); numbers added to a
-roll; `movement` by a fixed amount or for one movement type; links to effects that aren't table conditions;
-whose turns a default duration counts (`turnOf`, always the bearer's). Each can be added as described under
-"Versions".
+Numbers added to a roll; conditions on mechanics (a `when` on a mechanic record); `movement` by a fixed amount
+or for one movement type; links to effects that aren't table conditions; whose turns a default duration counts
+(`turnOf`, always the bearer's). Each can be added as described under "Versions". (Conditions on a roll rule
+beyond `tests`, `beyondSenses` and `vsTarget` were on this list until #7: see "Predicates on roll rules".)
 
 ## Development
 

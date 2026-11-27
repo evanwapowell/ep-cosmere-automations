@@ -17,7 +17,7 @@ import { CONDITIONS_BY_ID } from '../data/conditions.js';
 import { SITUATIONAL_BY_ID } from '../data/situational.js';
 import { MODES, MODULE_ID, SYSTEM_ID } from './constants.js';
 import { skillPenalty } from './mechanics.js';
-import { attackTypeOf, beyondSenses, collectModifiers, describeModifiers, needsSensesRange, netMode, sideSources, skillPenaltyFormula } from './logic/rolls.js';
+import { attackTypeOf, beyondSenses, collectModifiers, describeModifiers, needsSensesRange, netMode, sideConditions, sideSources, skillPenaltyFormula } from './logic/rolls.js';
 import { consumeEffect } from './relay.js';
 import { ruleEffects } from './rules.js';
 import { conditionMode, effectRulesMode, featureMode, SETTINGS, weakerMode } from './settings.js';
@@ -68,19 +68,17 @@ export function modeOf(key) {
 }
 
 /**
- * What the roll layer needs to know about an actor: one source per effect with roll rules, and the actor's stance
- * from the table when no marker effect carries it.
+ * What the roll layer needs to know about an actor: one source per effect with roll rules (and the actor's stance
+ * from the table when no marker effect carries it), plus what the facts of a test say about it: the conditions it
+ * has and the stance it is in (scripts/logic/predicates.js).
  */
 export function sideOf(actor) {
     if (!actor) return null;
     // The same effects as the mechanics layer: the actor's own and those its items transfer (#4).
     const rows = ruleEffects(actor, { includeEmpty: true, transferred: true }).map((row) => ({ ...row, onActor: row.effect.parent === actor }));
-    const sources = sideSources(rows, {
-        stance: actor.getFlag?.(SYSTEM_ID, 'mode.stance') ?? null,
-        conditions: CONDITIONS_BY_ID,
-        situational: SITUATIONAL_BY_ID,
-    });
-    return { uuid: actor.uuid, name: actor.token?.name ?? actor.name, sources };
+    const stance = actor.getFlag?.(SYSTEM_ID, 'mode.stance') ?? null;
+    const sources = sideSources(rows, { stance, conditions: CONDITIONS_BY_ID, situational: SITUATIONAL_BY_ID });
+    return { uuid: actor.uuid, name: actor.token?.name ?? actor.name, sources, conditions: sideConditions(rows), stance };
 }
 
 function actorOf(context, source, config) {
@@ -89,18 +87,32 @@ function actorOf(context, source, config) {
 }
 
 /**
- * The modifiers a test gets.
+ * A test as the roll layer sees it: the two sides and the test, ready for `collectModifiers` and `rollFacts`.
  * @param {Actor} actor the roller
  * @param {{context: string, skill?: string | null, attackType?: string | null}} test
  * @param {{target?: Actor | null}} [options] target: the target to use (default: the user's single target, whose
- *   distance is then measured for rules that need it)
+ *   distance is then measured when a rule of either side asks whether it is beyond the roller's senses)
+ * @returns {{roller: object, target: object | null, test: object}}
  */
-export function modifiersFor(actor, test, { target } = {}) {
+export function situationFor(actor, test, { target } = {}) {
     const roller = sideOf(actor);
     const measured = target === undefined;
     const targetActor = measured ? singleTarget(actor) : target;
-    if (measured && targetActor && needsSensesRange(roller)) test = { ...test, beyondSenses: targetBeyondSenses(actor) };
-    return collectModifiers({ roller, target: sideOf(targetActor), test }, { modeOf });
+    const targetSide = sideOf(targetActor);
+    if (measured && targetActor && (needsSensesRange(roller, 'self') || needsSensesRange(targetSide, 'target'))) {
+        test = { ...test, beyondSenses: targetBeyondSenses(actor) };
+    }
+    return { roller, target: targetSide, test };
+}
+
+/**
+ * The modifiers a test gets.
+ * @param {Actor} actor the roller
+ * @param {{context: string, skill?: string | null, attackType?: string | null}} test
+ * @param {{target?: Actor | null}} [options] as for `situationFor`
+ */
+export function modifiersFor(actor, test, options) {
+    return collectModifiers(situationFor(actor, test, options), { modeOf });
 }
 
 /** The roller's senses range in the scene's units (the system's derived value: override or derived, plus bonus). */

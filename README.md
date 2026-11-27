@@ -24,8 +24,10 @@ in a game until they have been tested on a throwaway scene. See [DESIGN.md](DESI
   uses such as Recover recharge. A long rest removes one stack of Exhausted (the condition table's `longRest` field), but not the stacks an injury holds.
 - **Advantage and disadvantage** from conditions (Restrained, Empowered, Disoriented; a Prone or Flying target) and
   from Dodge, Brace, Gain Advantage and Flamestance, and from any effect that carries roll rules of its own
-  (setting "Rules on other effects"). The roll dialog opens with it selected so the player can
-  change it, and the chat card says why. Advantages and disadvantages cancel one for one.
+  (setting "Rules on other effects"). Such a rule can say when it applies (`when: ['test:attack',
+  'target:condition:prone']`, with `or` and `not`; see "Predicates on roll rules" in `DESIGN.md`). The roll dialog
+  opens with it selected so the player can change it, and the chat card says why. Advantages and disadvantages
+  cancel one for one.
 - **Chat lines** when a condition starts or ends (NPC lines whispered to the GM).
 - **Every feature can be switched off.** Each condition and stances have a setting: full, remind only (a chat
   reminder, no changes) or off. Rules carried by other effects (a talent's, a stance's, an item's or a homebrew
@@ -47,7 +49,7 @@ await api.apply(actor, 'slowed', { source: injuryItem }); // ends when the item 
 await api.apply(actor, 'stunned', { duration: 'endOfNextTurn' });
 await api.apply(actor, 'immobilized', { duration: ['untilUsed', 'endOfScene'] }); // whichever comes first
 await api.mark(actor, 'advantage', { target: enemy });   // Gain Advantage succeeded
-api.modifiers(actor, { target: enemy, context: 'Attack', attackType: 'melee' }); // preview
+api.modifiers(actor, { target: enemy, context: 'Attack', attackType: 'melee' }); // preview: { modifiers, mode, facts }
 await api.endScene();          // the tokens on the viewed scene
 await api.advanceDays(1);
 await api.tie(actor, 'exhausted', injuryItem);          // an existing condition now lasts as long as the injury

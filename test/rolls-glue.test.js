@@ -549,3 +549,88 @@ test('a talent\'s transferred effect with roll rules counts (as in the mechanics
     effect.updateSource({ disabled: true });
     assert.equal((await rollSkill(kal, 'per', { fastForward: true })).options.advantageMode, 'none');
 });
+
+/* --- Predicates: `when` on a roll rule (step 6 of portable rules) --- */
+
+test('a rule with a `when`: advantage on attacks against a Surprised or Stunned target; the preview lists the facts', async () => {
+    reset();
+    const kal = new FakeActor({ name: 'Kal' });
+    const brute = new FakeActor({ name: 'Brute' });
+    await ruleEffect(kal, 'Opportunist', [{ who: 'self', mode: 'advantage', when: ['test:attack', { or: ['target:condition:stunned', 'target:condition:surprised'] }] }]);
+    target(brute);
+    assert.equal((await rollAttack(kal, sword(kal), { fastForward: true })).options.advantageMode, 'none', 'the target is neither');
+
+    await api.apply(brute, 'surprised'); // a condition with no rules of its own still is a fact
+    await flush();
+    const swing = await rollAttack(kal, sword(kal), { fastForward: true });
+    assert.equal(swing.options.advantageMode, 'advantage');
+    assert.equal(swing.options[MODULE].note, 'Advantage: Opportunist.');
+    assert.equal((await rollSkill(kal, 'ath', { fastForward: true })).options.advantageMode, 'none', 'not an attack');
+    target(null);
+    assert.equal((await rollAttack(kal, sword(kal), { fastForward: true })).options.advantageMode, 'none', 'no target');
+
+    const preview = api.modifiers(kal, { target: brute, context: 'Attack', skill: 'hwp', attackType: 'melee' });
+    assert.equal(preview.mode, 'advantage');
+    assert.deepEqual(preview.facts, ['attack:melee', `self:is:${kal.uuid}`, 'target:condition:surprised', `target:is:${brute.uuid}`, 'test:attack', 'test:skill:hwp']);
+});
+
+test('facts about the roller: its conditions and its stance', async () => {
+    reset();
+    const kal = new FakeActor({ name: 'Kal' });
+    await ruleEffect(kal, 'Heavy Pack', [{ who: 'self', mode: 'disadvantage', when: ['test:skill:ath', { not: 'self:stance:flamestance' }, { not: 'self:condition:empowered' }] }]);
+    assert.equal((await rollSkill(kal, 'ath', { fastForward: true })).options.advantageMode, 'disadvantage');
+    assert.equal((await rollSkill(kal, 'prc', { fastForward: true })).options.advantageMode, 'none');
+
+    await kal.setMode('stance', 'flamestance');
+    await flush();
+    assert.equal((await rollSkill(kal, 'ath', { fastForward: true })).options.advantageMode, 'none', 'in the stance');
+    assert.ok(api.modifiers(kal, { skill: 'ath' }).facts.includes('self:stance:flamestance'));
+    await kal.setMode('stance', 'stonestance');
+    await flush();
+    assert.equal((await rollSkill(kal, 'ath', { fastForward: true })).options.advantageMode, 'disadvantage', 'another stance');
+
+    await api.apply(kal, 'empowered');
+    await flush();
+    const roll = await rollSkill(kal, 'ath', { fastForward: true });
+    assert.equal(roll.options[MODULE].note, 'Advantage: Empowered.', 'Empowered switches the rule off and adds its own');
+});
+
+test('a `when` that asks about the senses range has the distance measured, also from a rule on the target', async () => {
+    reset();
+    const previousCanvas = globalThis.canvas;
+    globalThis.canvas = { grid: { measurePath: ([a, b]) => ({ distance: (Math.hypot(b.x - a.x, b.y - a.y) / 100) * 5 }) } };
+    try {
+        const kal = new FakeActor({ name: 'Kal' });
+        const brute = new FakeActor({ name: 'Brute', type: 'adversary', hasPlayerOwner: false });
+        kal.getActiveTokens = () => [{ center: { x: 0, y: 0 } }];
+        kal.system.senses = { range: { value: 10 }, obscuredAffected: true };
+        await ruleEffect(brute, 'Camouflaged', [{ who: 'target', mode: 'disadvantage', when: ['test:attack', 'attack:ranged', 'target:beyond-senses'] }]);
+        const at = (squares) => {
+            game.user.targets = new Set([{ actor: brute, center: { x: squares * 100, y: 0 } }]);
+        };
+        at(4); // 20 ft
+        const far = await rollAttack(kal, bow(kal), { fastForward: true });
+        assert.equal(far.options.advantageMode, 'disadvantage');
+        assert.equal(far.options[MODULE].note, 'Disadvantage: target Camouflaged.');
+        assert.equal((await rollAttack(kal, sword(kal), { fastForward: true })).options.advantageMode, 'none', 'ranged only');
+        at(1); // 5 ft
+        assert.equal((await rollAttack(kal, bow(kal), { fastForward: true })).options.advantageMode, 'none', 'within the senses range');
+    } finally {
+        globalThis.canvas = previousCanvas;
+    }
+});
+
+test('a `when` this version cannot read turns the effect\'s rules off instead of applying them too widely', async () => {
+    reset();
+    const kal = new FakeActor({ name: 'Kal' });
+    const original = console.warn;
+    const seen = [];
+    console.warn = (...args) => seen.push(args.join(' '));
+    try {
+        await ruleEffect(kal, 'Hex', [{ who: 'self', mode: 'disadvantage', tests: 'all', when: ['weather:rain'] }]);
+        assert.equal((await rollSkill(kal, 'ath', { fastForward: true })).options.advantageMode, 'none');
+    } finally {
+        console.warn = original;
+    }
+    assert.match(seen.join('\n'), /Ignoring the rules on "Hex".*rolls\[0\]: when\[0\]: unknown fact "weather:rain"/s);
+});

@@ -6,29 +6,50 @@
  * d20, so whatever is left over decides the mode.
  */
 import { ROLL_MODES, ROLL_TESTS, ROLL_WHO } from '../../data/conditions.js';
-// rules.js imports ruleError from here; both only use the other's exports inside functions, so the cycle is safe.
+import { FACT, factsIn, holds, rollFacts, rulePredicate, validatePredicate } from './predicates.js';
+// rules.js imports ruleProblems from here; both only use the other's exports inside functions, so the cycle is safe.
 import { defaultRules } from './rules.js';
 
 export const ADV = 'advantage';
 export const DIS = 'disadvantage';
 export const NONE = 'none';
 
-/**
- * Check one roll rule. Returns an error string or null.
- * @param {object} rule
- */
-export function ruleError(rule) {
+/** The first problem with a roll rule's fixed fields (`who`, `mode`, `tests` and the flags), or null. */
+function shapeError(rule) {
     if (!rule || typeof rule !== 'object') return 'rule must be an object';
     if (!ROLL_WHO.includes(rule.who)) return `unknown "who" ${JSON.stringify(rule.who)}`;
     if (!ROLL_MODES.includes(rule.mode)) return `unknown mode ${JSON.stringify(rule.mode)}`;
     const tests = rule.tests;
     const okTests =
+        (tests == null && rule.when != null) || // a rule with a `when` may leave `tests` out: every test
         ROLL_TESTS.includes(tests) ||
         (tests && typeof tests === 'object' && Array.isArray(tests.skills) && tests.skills.length > 0);
     if (!okTests) return `unknown tests ${JSON.stringify(tests)}`;
     if (rule.vsTarget && rule.who !== 'self') return 'vsTarget only makes sense for who: self';
     if (rule.beyondSenses && rule.who !== 'self') return 'beyondSenses only makes sense for who: self';
     return null;
+}
+
+/**
+ * Check one roll rule: its fixed fields, then its `when` (scripts/logic/predicates.js).
+ * @param {object} rule
+ * @param {{conditions?: Iterable<string> | null, skills?: Iterable<string> | null}} [known] valid ids, when known
+ *   (the facts of a `when` are then checked against them)
+ * @returns {string[]} the problems, empty when valid; a problem with the fixed fields is reported alone
+ */
+export function ruleProblems(rule, known) {
+    const error = shapeError(rule);
+    if (error) return [error];
+    return rule.when == null ? [] : validatePredicate(rule.when, known);
+}
+
+/**
+ * Check one roll rule. Returns an error string (the first problem) or null.
+ * @param {object} rule
+ * @param {object} [known] as for `ruleProblems`
+ */
+export function ruleError(rule, known) {
+    return ruleProblems(rule, known)[0] ?? null;
 }
 
 /**
@@ -66,22 +87,26 @@ export function attackTypeOf(item) {
 }
 
 /**
- * Whether a rule's `tests` covers a test.
+ * Whether a rule applies, given the facts of a test: its shorthand fields (`tests`, `beyondSenses`, `vsTarget`)
+ * and its `when` are one predicate (`rulePredicate`).
+ * @param {object} rule
+ * @param {Set<string>} facts the test's facts (`rollFacts`)
+ * @param {object | null} [value] the value of the effect that carries the rule (for `vsTarget`)
+ */
+export function ruleApplies(rule, facts, value) {
+    return holds(rulePredicate(rule, value), facts);
+}
+
+/**
+ * Whether a rule covers a test, going by the test alone: neither side is known here, so facts about the roller
+ * or the target are false, and `vsTarget` is left to the caller. `collectModifiers` decides with both sides.
  * @param {object} rule
  * @param {{context: string, skill?: string | null, attackType?: string | null, beyondSenses?: boolean | null}} test
  *   context: the system's roll context ('Skill', 'Item', 'Attack');
  *   beyondSenses: the target is farther than the roller's senses range (null: not measured)
  */
 export function ruleMatchesTest(rule, test) {
-    // Senseblind: only against a target measured to be beyond the roller's senses range.
-    if (rule.beyondSenses && test.beyondSenses !== true) return false;
-    const tests = rule.tests;
-    const isAttack = test.context === 'Attack';
-    if (tests === 'all') return true;
-    if (tests === 'attack') return isAttack;
-    if (tests === 'melee' || tests === 'ranged') return isAttack && test.attackType === tests;
-    if (tests && Array.isArray(tests.skills)) return !!test.skill && tests.skills.includes(test.skill);
-    return false;
+    return ruleApplies({ ...rule, vsTarget: false }, rollFacts({ test }));
 }
 
 /** The modifier key (and mode key) of a source that is not one of the tables' entries: see `rollSources`. */
@@ -177,6 +202,16 @@ export function sideSources(rows, { stance = null, conditions, situational }) {
 }
 
 /**
+ * The table conditions a side has, for the facts of a test (`self:condition:<id>`): every condition among its
+ * effects, whether or not it has roll rules.
+ * @param {Row[]} rows the actor's effects, those with no rules included
+ * @returns {string[]} condition ids, no repeats
+ */
+export function sideConditions(rows) {
+    return [...new Set((rows ?? []).map((row) => row.conditionId).filter(Boolean))];
+}
+
+/**
  * Collect the modifiers that apply to a test.
  *
  * @param {object} input
@@ -187,13 +222,17 @@ export function sideSources(rows, { stance = null, conditions, situational }) {
  * @param {(key: string) => 'full' | 'remind' | 'off'} options.modeOf  mode of a source's `modeKey`
  * @returns {Modifier[]}
  *
- * @typedef {{ uuid: string, name: string, sources: Source[] }} Side
+ * @typedef {{ uuid: string, name: string, sources: Source[], conditions?: string[], stance?: string | null }} Side
+ *   conditions, stance: what the facts of the test say about this side (`rollFacts`); a side without them only
+ *   gives the `is` fact
  * @typedef {{ key: string, label: string, mode: string, active: boolean, side: 'self' | 'target',
  *   consume?: {actorUuid: string, effectId: string} }} Modifier
  *   key: the source's `modeKey`; active: false when the source is in remind-only mode (shown, not applied)
  */
 export function collectModifiers({ roller, target, test }, { modeOf }) {
     const out = [];
+    // One set of facts for the whole test: every rule of both sides is judged against it.
+    const facts = rollFacts({ roller, target, test });
     const sides = [
         ['self', roller],
         ['target', target],
@@ -205,9 +244,8 @@ export function collectModifiers({ roller, target, test }, { modeOf }) {
             if (seen.has(source.key)) continue; // several instances of a condition count once
             seen.add(source.key);
             for (const rule of source.rules?.rolls ?? []) {
-                if (rule.who !== who || !ruleMatchesTest(rule, test)) continue;
-                // Only on a test against the enemy stored in the effect's value (Advantage gained).
-                if (rule.vsTarget && (!target || source.value?.targetUuid !== target.uuid)) continue;
+                // `vsTarget` (Advantage gained) reads the enemy stored in the effect's value.
+                if (rule.who !== who || !ruleApplies(rule, facts, source.value)) continue;
                 const mode = modeOf(source.modeKey);
                 if (mode === 'off') continue;
                 const targetName = rule.vsTarget ? source.value?.targetName : null;
@@ -226,9 +264,16 @@ export function collectModifiers({ roller, target, test }, { modeOf }) {
     return out;
 }
 
-/** Whether any of a side's roll rules needs to know if the target is beyond the roller's senses (Blind). */
-export function needsSensesRange(side) {
-    return !!side?.sources?.some((source) => source.rules?.rolls?.some((rule) => rule.beyondSenses));
+/**
+ * Whether any of a side's roll rules asks if the target is beyond the roller's senses (Senseblind's `beyondSenses`,
+ * or a `when` that names the fact), so the glue only measures the distance when something reads it.
+ * @param {Side | null} side
+ * @param {'self' | 'target'} [who] the rules that count for this side: 'self' for the roller, 'target' for its target
+ */
+export function needsSensesRange(side, who = 'self') {
+    return !!side?.sources?.some((source) =>
+        source.rules?.rolls?.some((rule) => rule.who === who && factsIn(rulePredicate(rule, source.value)).has(FACT.BEYOND_SENSES)),
+    );
 }
 
 /**

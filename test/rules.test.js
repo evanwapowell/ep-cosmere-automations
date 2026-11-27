@@ -273,7 +273,9 @@ test('unknown fields are reported, at every level', () => {
         'mechanics[0]: unknown field "attribute" for kind "skillModifier"',
     ]);
     // A qualifier this version can't read must not be dropped: the rule would then apply too widely.
-    assertProblems(validateRules({ rolls: [{ who: 'self', mode: 'advantage', tests: 'all', when: ['target:prone'] }] }), ['rolls[0]: unknown field "when"']);
+    assertProblems(validateRules({ rolls: [{ who: 'self', mode: 'advantage', tests: 'all', unless: ['test:attack'] }] }), ['rolls[0]: unknown field "unless"']);
+    // `when` is read since #7; a fact this version doesn't know is refused the same way (test/predicates.test.js).
+    assertProblems(validateRules({ rolls: [{ who: 'self', mode: 'advantage', tests: 'all', when: ['target:prone'] }] }), ['rolls[0]: when[0]: unknown fact "target:prone"']);
     assertProblems(validateRules({ rolls: [{ who: 'self', mode: 'advantage', tests: { skills: ['prc'], attribute: 'str' } }] }), [
         'rolls[0]: tests: unknown field "attribute"',
     ]);

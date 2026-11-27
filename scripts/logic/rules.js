@@ -12,7 +12,7 @@
  *       { kind: 'attributeBonus', from: 'value' },            // attribute and amount from the effect's value
  *       { kind: 'attributeBonus', attribute: 'str', amount: 1 },
  *     ],
- *     rolls: [{ who, mode, tests, beyondSenses?, vsTarget?, consume? }],   // see data/conditions.js
+ *     rolls: [{ who, mode, tests, when?, beyondSenses?, vsTarget?, consume? }],   // see data/conditions.js
  *     links: ['slowed'],                       // conditions it brings with it
  *     longRest: 1,                             // stacks a long rest takes off
  *     endsWhen: ['attack', 'move'],            // ends when its bearer does this
@@ -25,7 +25,8 @@
  */
 import { MECHANICS } from '../../data/conditions.js';
 import { KINDS, parseDurationSpec } from './durations.js';
-import { ruleError } from './rolls.js';
+import { parsePredicate } from './predicates.js';
+import { ruleProblems } from './rolls.js';
 
 /** The schema this version reads and writes. Rules without a `schema` field are schema 1. */
 export const RULES_SCHEMA = 1;
@@ -57,7 +58,7 @@ export const MECHANIC_RECORDS = Object.freeze({
 });
 
 const ROLL_FLAGS = Object.freeze(['beyondSenses', 'vsTarget', 'consume']);
-const ROLL_KEYS = Object.freeze(['who', 'mode', 'tests', ...ROLL_FLAGS]);
+const ROLL_KEYS = Object.freeze(['who', 'mode', 'tests', 'when', ...ROLL_FLAGS]);
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isId = (value) => typeof value === 'string' && value.length > 0;
@@ -131,12 +132,13 @@ function parseMechanic(record, known, fail) {
 }
 
 function parseRoll(rule, known, fail) {
-    const error = ruleError(rule);
-    if (error) return fail(error);
+    const errors = ruleProblems(rule, known);
+    if (errors.length) return void errors.forEach(fail);
     const extra = extraKeys(rule, ROLL_KEYS);
     if (extra.length) fail(unknownFields(extra));
-    const clean = { who: rule.who, mode: rule.mode, tests: rule.tests };
-    if (typeof rule.tests === 'object') {
+    // A rule with a `when` may leave `tests` out; it then covers every test.
+    const clean = { who: rule.who, mode: rule.mode, tests: rule.tests ?? 'all' };
+    if (isRecord(rule.tests)) {
         const extraTests = extraKeys(rule.tests, ['skills']);
         if (extraTests.length) fail(`tests: ${unknownFields(extraTests)}`);
         clean.tests = { skills: parseIds(rule.tests.skills, 'skill', known.skills, (message) => fail(`tests.skills: ${message}`)) };
@@ -145,6 +147,7 @@ function parseRoll(rule, known, fail) {
         if (rule[flag] != null && typeof rule[flag] !== 'boolean') fail(`${flag} must be true or false`);
         if (rule[flag] === true) clean[flag] = true;
     }
+    if (rule.when?.length) clean.when = parsePredicate(rule.when, known).when; // a clean copy: it was just checked
     return clean;
 }
 
@@ -191,7 +194,8 @@ function parseDuration(spec, fail) {
  * @typedef {object} Rules normalized rules; a field that is absent is not set
  * @property {1} schema
  * @property {object[]} [mechanics] records, every optional part filled in (`perStack`, `skills`)
- * @property {object[]} [rolls] roll rules; the flags `beyondSenses`, `vsTarget`, `consume` only when true
+ * @property {object[]} [rolls] roll rules; `tests` always set ('all' when left out), the flags `beyondSenses`,
+ *   `vsTarget`, `consume` only when true, `when` only when it has terms
  * @property {string[]} [links] condition ids, no repeats
  * @property {number} [longRest] whole number ≥ 0
  * @property {string[]} [endsWhen] no repeats
