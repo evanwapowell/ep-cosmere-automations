@@ -2,7 +2,7 @@
   "id": "ep-cosmere-automations",
   "title": "EP Cosmere Automations",
   "description": "Real conditions for the Cosmere RPG system: conditions that change movement, skill tests and advantage, carry values, bring linked conditions, remember their source and end by themselves; stances that actually switch on. Every feature can be set to full, remind-only or off.",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "authors": [
     {
       "name": "evanwapowell"
@@ -43,7 +43,7 @@
   ],
   "url": "https://github.com/evanwapowell/ep-cosmere-automations",
   "manifest": "https://github.com/evanwapowell/ep-cosmere-automations/releases/latest/download/module.json",
-  "download": "https://github.com/evanwapowell/ep-cosmere-automations/releases/download/v0.3.3/module.zip",
+  "download": "https://github.com/evanwapowell/ep-cosmere-automations/releases/download/v0.3.4/module.zip",
   "bugs": "https://github.com/evanwapowell/ep-cosmere-automations/issues",
   "socket": true
 }
