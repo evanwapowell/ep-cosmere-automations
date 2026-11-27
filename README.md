@@ -27,7 +27,8 @@ in a game until they have been tested on a throwaway scene. See [DESIGN.md](DESI
   change it, and the chat card says why. Advantages and disadvantages cancel one for one.
 - **Chat lines** when a condition starts or ends (NPC lines whispered to the GM).
 - **Every feature can be switched off.** Each condition and stances have a setting: full, remind only (a chat
-  reminder, no changes) or off. Everything starts in remind-only mode.
+  reminder, no changes) or off. Rules carried by other effects (a talent's, a stance's, an item's or a homebrew
+  effect's) follow one setting, "Rules on other effects". Everything starts in remind-only mode.
 
 ## Install
 

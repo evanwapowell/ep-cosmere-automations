@@ -14,6 +14,7 @@ export const SETTINGS = Object.freeze({
     SCENE_RECHARGE: 'sceneRecharge',
     ROLLS: 'rolls',
     ACTION_EFFECTS: 'actionEffects',
+    OTHER_EFFECTS: 'otherEffects',
     conditionKey: (id) => `condition.${id}`,
 });
 
@@ -155,6 +156,21 @@ export function registerSettings() {
         default: MODES.REMIND,
     });
 
+    game.settings.register(MODULE_ID, SETTINGS.OTHER_EFFECTS, {
+        name: t('settings.otherEffects.name', null, 'Rules on other effects'),
+        hint: t(
+            'settings.otherEffects.hint',
+            null,
+            "Rules carried by effects that are not one of the module's conditions (a talent's, a stance's, an item's or a homebrew effect's). Full: their movement and skill changes apply. Remind: they change nothing. A condition's rules follow that condition's own setting.",
+        ),
+        scope: 'world',
+        config: true,
+        type: String,
+        choices: modeChoices(),
+        default: MODES.REMIND,
+        onChange: refreshActors,
+    });
+
     for (const entry of AUTOMATED_CONDITIONS) {
         game.settings.register(MODULE_ID, SETTINGS.conditionKey(entry.id), {
             name: t('settings.condition.name', { name: entry.name }, `Condition: ${entry.name}`),
@@ -189,6 +205,17 @@ export function conditionMode(id) {
     } catch {
         return MODES.OFF;
     }
+}
+
+/**
+ * The mode an effect's rules follow: a condition's own setting when the condition has one, else the world setting
+ * "Rules on other effects" (effects that are not conditions, and conditions the module doesn't automate, whose
+ * rules can only come from the effect itself).
+ * @param {string | null | undefined} conditionId the table condition the effect stands for, if any
+ */
+export function effectRulesMode(conditionId) {
+    if (conditionId && isAutomated(CONDITIONS_BY_ID[conditionId])) return conditionMode(conditionId);
+    return featureMode(SETTINGS.OTHER_EFFECTS);
 }
 
 export function stanceMode() {

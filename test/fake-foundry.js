@@ -175,6 +175,7 @@ export class FakeEffect {
         this.disabled = !!d.disabled;
         this.isSuppressed = false;
         this.statuses = new Set(d.statuses ?? []);
+        this.transfer = d.transfer ?? true; // Foundry's default; only read for effects on items
         this.flags = d.flags ?? {};
         this.system = d.system ?? {};
         this.changes = d.changes ?? [];
@@ -290,22 +291,37 @@ export class FakeActor extends Actor {
         this.modeCalls = [...(this.modeCalls ?? []), [modality, mode]];
         await this.setFlag('cosmere-rpg', `mode.${modality}`, mode);
     }
-    /** The system's derived step, simplified: walking speed from Speed, skill mods 0 + bonus. */
+    /**
+     * The system's derived step, simplified: like cosmere-rpg 3.1.x it applies active effects inside this step
+     * (`applyActiveEffects`), then derives walking speed from Speed (value + bonus); skill mods are 0 + bonus.
+     */
     prepareDerivedData() {
-        const attrBonus = { spd: 0 };
+        this.system = {
+            attributes: { spd: { value: this.speed, bonus: 0 } },
+            immunities: { condition: {} },
+        };
+        this.applyActiveEffects();
+        const spd = this.system.attributes.spd;
+        const speed = spd.value + spd.bonus;
+        const rate = (base) => ({ derived: base, bonus: 0, useOverride: false, override: null, get value() { return (this.useOverride ? this.override : this.derived) + this.bonus; } });
+        this.system.movement = { walk: { rate: rate(SPEED_RATES[Math.max(0, Math.min(Math.ceil(speed / 2), 5))]) }, fly: { rate: rate(0) } };
+        this.system.skills = Object.fromEntries(this.skillIds.map((id) => [id, { mod: rate(2) }]));
+    }
+    /** Foundry's step, reduced to ADD changes to the Speed bonus from the actor's own enabled effects. */
+    applyActiveEffects() {
         for (const e of this.effects.contents) {
             if (e.disabled) continue;
             for (const c of e.changes) {
-                if (c.key === 'system.attributes.spd.bonus') attrBonus.spd += Number(c.value);
+                if (c.key === 'system.attributes.spd.bonus') this.system.attributes.spd.bonus += Number(c.value);
             }
         }
-        const speed = this.speed + attrBonus.spd;
-        const rate = (base) => ({ derived: base, bonus: 0, useOverride: false, override: null, get value() { return (this.useOverride ? this.override : this.derived) + this.bonus; } });
-        this.system = {
-            immunities: { condition: {} },
-            movement: { walk: { rate: rate(SPEED_RATES[Math.min(Math.ceil(speed / 2), 5)]) }, fly: { rate: rate(0) } },
-            skills: Object.fromEntries(this.skillIds.map((id) => [id, { mod: rate(2) }])),
-        };
+    }
+    /** Foundry v13's, as cosmere-rpg 3.1.x overrides it: the actor's effects, then what its items transfer. */
+    *allApplicableEffects() {
+        yield* this.effects;
+        for (const item of this.items) {
+            for (const effect of item.effects ?? []) if (effect.transfer) yield effect;
+        }
     }
     reset() {
         this.prepareDerivedData();
