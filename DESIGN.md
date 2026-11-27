@@ -15,7 +15,8 @@ conditions.
 - **Status:** phases 1–3 written (2026-11-26) and given a first live pass (Foundry 13.351, cosmere-rpg 3.1.2,
   Stormlight Handbook data, Advanced Encounters, Automated Actions): 19 of 21 checks pass on v0.3.1 after six
   fixes; two need a second login. See "Live pass results" below and the "Phase 1/2/3 as built" sections.
-  0.3.2 and 0.3.3 added the rules in "After the live pass" and "Held conditions".
+  0.3.2 and 0.3.3 added the rules in "After the live pass" and "Held conditions"; 0.3.4 moved the long-rest step
+  into the table.
 
 ## Ground rules
 
@@ -448,8 +449,10 @@ What the code does, and where it differs from the plan above.
   tick if the GM uses Foundry's turn order; round-based ones still tick on round changes.
 - **End of scene** (a GM button in the token controls, `api.endScene()`, or ending an encounter): effects lasting
   until the end of the scene end, stances end (`endStance`), per-scene uses recharge. Each follows its setting.
-- **Long rest:** effects lasting until a long rest end, and Exhausted loses one stack (part of Exhausted's own
-  setting; turn Automated Actions' exhaustion handling off if both are on).
+- **Long rest:** effects lasting until a long rest end, and each condition whose table entry has `longRest: n`
+  loses n free stacks (one ends a condition that doesn't stack). Only Exhausted has it (`longRest: 1`); it follows
+  the condition's own setting. A step another module already does is skipped (`longRestDoneElsewhere` in
+  settings.js: Automated Actions' "decrementExhaustion"); turn that off to leave it to this module.
 - **Setting the duration:** the API's `duration` option; else the table's default (Surprised: end of next turn;
   Empowered: end of scene; Determined: until used); and when a condition is turned on from the token or sheet during
   combat (setting: during combat / always / never), the same dialog as for values asks how long it lasts.
@@ -651,6 +654,10 @@ the same thing with granted conditions: off-guard from prone can't be removed wh
   it (for conditions set before the module knew about the injury).
 - Automated Actions' own long-rest reduction, if left on, is refused for held stacks by the same guard (with the
   warning), so it can't take an injury's stack either. Turning it off leaves the long rest to this module.
+- **The code names no condition for any of this (0.3.4).** Holding comes from sources (the table's `links`, or an
+  item given as `source`/`tie`); stacks from the table's `stackable`; the long-rest step from the table's
+  `longRest`. An injury can't be a table link, since it is an item and the player picks its effect, so it is tied
+  when applied.
 
 ## Development
 

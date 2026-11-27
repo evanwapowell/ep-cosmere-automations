@@ -21,7 +21,7 @@ in a game until they have been tested on a throwaway scene. See [DESIGN.md](DESI
   creature's (next) turn, the end of the scene, a long rest, a number of days, or until used, whichever comes first.
   Turns follow Foundry's turn pointer as Cosmere Advanced Encounters moves it.
 - **End of scene** (button in the token controls, or ending combat): scene-long effects and stances end, per-scene
-  uses such as Recover recharge. A long rest removes one stack of Exhausted, but not the stacks an injury holds.
+  uses such as Recover recharge. A long rest removes one stack of Exhausted (the condition table's `longRest` field), but not the stacks an injury holds.
 - **Advantage and disadvantage** from conditions (Restrained, Empowered, Disoriented; a Prone or Flying target) and
   from Dodge, Brace, Gain Advantage and Flamestance. The roll dialog opens with it selected so the player can
   change it, and the chat card says why. Advantages and disadvantages cancel one for one.

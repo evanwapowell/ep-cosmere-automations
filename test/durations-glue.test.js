@@ -319,6 +319,26 @@ async function healInjury(actor, injury) {
 }
 const exhausted = (actor) => actor.effects.find((e) => e.statuses.has('exhausted'));
 
+test('the long-rest step comes from the table: any condition with longRest gets it', async () => {
+    const { CONDITIONS_BY_ID } = await import('../data/conditions.js');
+    const entry = CONDITIONS_BY_ID.slowed;
+    entry.longRest = 1;
+    try {
+        const { actor: sigzil, injury } = injuryOn('Sigzil');
+        await api.apply(sigzil, 'slowed', { source: injury });
+        const kaladin = new FakeActor({ name: 'Kaladin' });
+        await api.apply(kaladin, 'slowed');
+        await flush();
+        Hooks.callAll('cosmere-rpg.rest', sigzil, 'long');
+        Hooks.callAll('cosmere-rpg.rest', kaladin, 'long');
+        await flush();
+        assert.ok(has(sigzil, 'slowed'), 'held by the injury, it stays');
+        assert.deepEqual(statuses(kaladin), [], 'set by hand, it ends');
+    } finally {
+        delete entry.longRest;
+    }
+});
+
 test('Slowed from Prone cannot be removed by hand while Prone stays; it goes with Prone', async () => {
     const lift = new FakeActor({ name: 'Lift' });
     await hudToggle(lift, 'prone');

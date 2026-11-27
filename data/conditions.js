@@ -13,6 +13,7 @@
  * - stackable   the system stacks it (system.stacks)
  * - mechanics   what the engine changes, by name (see MECHANICS)
  * - links       conditions this one brings with it (removed with it unless something else applied them)
+ * - longRest    stacks a long rest takes off (one ends a condition that doesn't stack); stacks a source holds stay
  * - duration    default duration kinds (see scripts/logic/durations.js), used when none is given
  * - rolls       roll modifiers (see ROLL_RULE below)
  * - phase       the release that automates it; entries for later phases are listed but do nothing yet
@@ -156,6 +157,7 @@ export const CONDITIONS = Object.freeze([
         stackable: true,
         mechanics: [MECHANICS.SKILL_PENALTY_PER_STACK],
         links: [],
+        longRest: 1,
         phase: 1,
         handledBy: 'Cosmere Automated Actions ("Let conditions modify rolls"): keep one of the two on',
     },

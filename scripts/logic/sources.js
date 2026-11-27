@@ -73,16 +73,19 @@ export function holders(sources, isGone) {
 }
 
 /**
- * A long rest takes one free stack off a stackable condition. Stacks a source holds stay.
+ * A long rest takes up to `n` free stacks off a condition (the table's `longRest`). Stacks a source holds stay.
+ * A condition that doesn't stack has one stack.
  * @param {number} total current stacks
  * @param {{key: string, label: string, stacks?: number}[]} sources
+ * @param {number} [n] stacks a long rest takes off
  * @returns {{action: 'keep' | 'update' | 'delete', stacks: number, held: number,
  *   sources?: {key: string, label: string}[]}} sources: given when the hand-applied source should go (no free stack left)
  */
-export function planLongRest(total, sources) {
+export function planLongRest(total, sources, n = 1) {
     const held = heldStacks(sources);
-    if (total - held <= 0) return { action: 'keep', stacks: total, held };
-    const stacks = total - 1;
+    const free = total - held;
+    if (free <= 0) return { action: 'keep', stacks: total, held };
+    const stacks = total - Math.min(n, free);
     if (stacks <= 0) return { action: 'delete', stacks: 0, held };
     const plan = { action: 'update', stacks, held };
     if (stacks <= held && sources.some((s) => s.key === MANUAL.key)) {

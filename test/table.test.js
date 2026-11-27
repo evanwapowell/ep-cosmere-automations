@@ -62,6 +62,8 @@ test('validation catches bad entries', () => {
         { ...base, id: 'e', stackable: true, multiInstance: true },
         { ...base, id: 'f', links: ['f'] },
         { id: 'g', mechanics: [], links: [] },
+        { ...base, id: 'h', longRest: 0 },
+        { ...base, id: 'i', longRest: 1.5 },
     ]);
     const joined = errors.join('\n');
     for (const fragment of [
@@ -74,6 +76,8 @@ test('validation catches bad entries', () => {
         'f: links to itself',
         'g: missing name',
         'g: missing summary',
+        'h: longRest must be',
+        'i: longRest must be',
     ]) {
         assert.ok(joined.includes(fragment), `expected "${fragment}" in:\n${joined}`);
     }

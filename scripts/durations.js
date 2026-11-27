@@ -15,7 +15,7 @@ import { advance, describeDuration, newDuration, parseDurationSpec, phaseIndex }
 import { describeSources, planLongRest, readSources } from './logic/sources.js';
 import { isEndStance } from './logic/stances.js';
 import { conditionIdOf } from './logic/table.js';
-import { allActors, conditionMode, featureMode, otherModuleReducesExhaustion, setting, SETTINGS, stanceMode } from './settings.js';
+import { allActors, conditionMode, featureMode, longRestDoneElsewhere, setting, SETTINGS, stanceMode } from './settings.js';
 import { endStance } from './stances.js';
 import { afflictedTurnEnd } from './triggers.js';
 import { actorName, esc, isActiveGM, safe, serial, t } from './util.js';
@@ -205,37 +205,49 @@ async function onDeleteCombat(combat) {
 async function onRest(actor, restType) {
     if (restType !== 'long' || !actor?.isOwner) return;
     await dispatch([actor], { type: 'longRest' });
-    await reduceExhaustion(actor);
+    await reduceOnLongRest(actor);
 }
 
 /**
- * A long rest removes one stack of Exhausted (the system leaves this to the GM), but not the stacks a source
- * holds: an injury's Exhausted lasts as long as the injury. Skipped when Cosmere Automated Actions already does
- * it, so the stack isn't taken twice (its change is then refused for held stacks, by conditions.js).
+ * A long rest takes stacks off the conditions whose table entry has `longRest` (Exhausted: one; the system leaves
+ * this to the GM), but not the stacks a source holds: an injury's Exhausted lasts as long as the injury. A step
+ * another module already does is skipped, so it isn't done twice (its change is then refused for held stacks, by
+ * conditions.js).
  */
-async function reduceExhaustion(actor) {
-    const mode = conditionMode('exhausted');
-    if (mode === MODES.OFF || otherModuleReducesExhaustion()) return;
-    const effect = actor.effects.find((e) => conditionIdOf(e.statuses, CONDITIONS_BY_ID) === 'exhausted');
-    if (!effect) return;
+async function reduceOnLongRest(actor) {
+    for (const effect of [...(actor.effects?.contents ?? [])]) {
+        const id = conditionIdOf(effect.statuses, CONDITIONS_BY_ID);
+        const n = CONDITIONS_BY_ID[id]?.longRest;
+        if (!n || !actor.effects.has(effect.id)) continue;
+        const mode = conditionMode(id);
+        if (mode === MODES.OFF || longRestDoneElsewhere(id)) continue;
+        await longRestStep(actor, effect, CONDITIONS_BY_ID[id], mode);
+    }
+}
+
+async function longRestStep(actor, effect, entry, mode) {
     const sources = readSources(effect.getFlag(MODULE_ID, FLAGS.SOURCES));
-    const plan = planLongRest(effect.system?.stacks ?? 1, sources);
+    const total = entry.stackable ? effect.system?.stacks ?? 1 : 1;
+    const plan = planLongRest(total, sources, entry.longRest);
     const actorLabel = `<b>${esc(actorName(actor))}</b>`;
+    const condition = `<b>${esc(effect.name)}</b>`;
     if (plan.action === 'keep') {
         await postLine(
             actor,
             t(
-                'chat.exhaustionHeld',
-                { actor: actorLabel, condition: `<b>${esc(effect.name)}</b>`, source: esc(describeSources(sources)) },
+                'chat.longRestHeld',
+                { actor: actorLabel, condition, source: esc(describeSources(sources)) },
                 '{actor} stays {condition} after the long rest (from {source}).',
             ),
         );
         return;
     }
     if (mode === MODES.REMIND) {
-        await postLine(actor, t('chat.exhaustionRemind', { actor: actorLabel }, '{actor} finished a long rest.'), {
-            reminder: t('chat.exhaustionRemindHint', null, 'Exhausted goes down by 1.'),
-        });
+        const hint =
+            plan.action === 'delete'
+                ? t('chat.longRestEndsHint', { condition: effect.name }, '{condition} ends.')
+                : t('chat.longRestRemindHint', { condition: effect.name, n: total - plan.stacks }, '{condition} goes down by {n}.');
+        await postLine(actor, t('chat.longRestRemind', { actor: actorLabel }, '{actor} finished a long rest.'), { reminder: hint });
         return;
     }
     const engine = { [MODULE_ID]: { [OPTION_KEYS.ENGINE]: { reason: t('reason.longRest', null, 'long rest') } } };

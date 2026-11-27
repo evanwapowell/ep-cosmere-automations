@@ -213,15 +213,20 @@ export function featureMode(key) {
 }
 
 /**
- * Whether Cosmere Automated Actions takes a stack of Exhausted off on a long rest itself (its "decrementExhaustion"
- * setting, under its master switch). Both doing it race: seen live 2026-11-25, at one stack both delete the
- * effect and one of the deletes fails.
+ * Long-rest steps another module already does, by condition id. Cosmere Automated Actions takes a stack of
+ * Exhausted off itself when its "decrementExhaustion" setting is on (under its master switch). Both doing it race:
+ * seen live 2026-11-25, at one stack both delete the effect and one of the deletes fails.
  */
-export function otherModuleReducesExhaustion() {
-    const other = 'cosmere-automated-actions';
-    if (!game.modules?.get(other)?.active) return false;
+const OTHER_MODULE_LONG_REST = {
+    exhausted: { module: 'cosmere-automated-actions', setting: 'decrementExhaustion', master: 'useAutomations' },
+};
+
+/** Whether another module does this condition's long-rest step itself (so the engine skips it). */
+export function longRestDoneElsewhere(conditionId) {
+    const other = OTHER_MODULE_LONG_REST[conditionId];
+    if (!other || !game.modules?.get(other.module)?.active) return false;
     try {
-        return game.settings.get(other, 'useAutomations') !== false && game.settings.get(other, 'decrementExhaustion') === true;
+        return game.settings.get(other.module, other.master) !== false && game.settings.get(other.module, other.setting) === true;
     } catch {
         return false;
     }

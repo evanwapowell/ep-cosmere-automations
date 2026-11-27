@@ -46,6 +46,9 @@ export function validateTable(table) {
             errors.push(`${entry.id}: cannot be both multiInstance and stackable`);
         }
         if (entry.links?.includes(entry.id)) errors.push(`${entry.id}: links to itself`);
+        if (entry.longRest != null && !(Number.isInteger(entry.longRest) && entry.longRest > 0)) {
+            errors.push(`${entry.id}: longRest must be a positive whole number`);
+        }
         if (entry.duration != null) {
             const parsed = parseDurationSpec(entry.duration);
             if (!parsed.ok) errors.push(`${entry.id}: ${parsed.error}`);

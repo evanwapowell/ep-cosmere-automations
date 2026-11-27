@@ -271,6 +271,8 @@ test('a long rest takes only a free stack', () => {
     assert.deepEqual(planLongRest(2, [injury, MANUAL]), { action: 'update', stacks: 1, held: 1, sources: [injury] });
     assert.deepEqual(planLongRest(3, [injury, MANUAL]), { action: 'update', stacks: 2, held: 1 });
     assert.deepEqual(planLongRest(1, [MANUAL]), { action: 'delete', stacks: 0, held: 0 });
+    assert.deepEqual(planLongRest(4, [injury, MANUAL], 2), { action: 'update', stacks: 2, held: 1 }, 'the table can take more than one');
+    assert.deepEqual(planLongRest(3, [injury, MANUAL], 5), { action: 'update', stacks: 1, held: 1, sources: [injury] }, 'never a held one');
 });
 
 test('when a source goes, the stacks it held go too', () => {
