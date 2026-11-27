@@ -18,7 +18,7 @@ import { conditionIdOf } from './logic/table.js';
 import { allActors, conditionMode, featureMode, longRestDoneElsewhere, setting, SETTINGS, stanceMode } from './settings.js';
 import { endStance } from './stances.js';
 import { afflictedTurnEnd } from './triggers.js';
-import { actorName, esc, isActiveGM, safe, serial, t } from './util.js';
+import { actorName, esc, isActiveGM, safe, serial, statusLabel, t } from './util.js';
 
 export function registerDurationHooks() {
     Hooks.on('updateCombat', safe('updateCombat', onUpdateCombat));
@@ -230,7 +230,8 @@ async function longRestStep(actor, effect, entry, mode) {
     const total = entry.stackable ? effect.system?.stacks ?? 1 : 1;
     const plan = planLongRest(total, sources, entry.longRest);
     const actorLabel = `<b>${esc(actorName(actor))}</b>`;
-    const condition = `<b>${esc(effect.name)}</b>`;
+    const name = statusLabel(entry.id, entry.name);
+    const condition = `<b>${esc(name)}</b>`;
     if (plan.action === 'keep') {
         await postLine(
             actor,
@@ -245,8 +246,8 @@ async function longRestStep(actor, effect, entry, mode) {
     if (mode === MODES.REMIND) {
         const hint =
             plan.action === 'delete'
-                ? t('chat.longRestEndsHint', { condition: effect.name }, '{condition} ends.')
-                : t('chat.longRestRemindHint', { condition: effect.name, n: total - plan.stacks }, '{condition} goes down by {n}.');
+                ? t('chat.longRestEndsHint', { condition: name }, '{condition} ends.')
+                : t('chat.longRestRemindHint', { condition: name, n: total - plan.stacks }, '{condition} goes down by {n}.');
         await postLine(actor, t('chat.longRestRemind', { actor: actorLabel }, '{actor} finished a long rest.'), { reminder: hint });
         return;
     }

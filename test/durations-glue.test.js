@@ -382,8 +382,10 @@ test("an injury's Exhausted survives long rests and goes when the injury heals",
     assert.ok(exhausted(arlo), 'a long rest leaves it');
     assert.match(env.chat.at(-1).content, /stays .*Exhausted.* after the long rest \(from Vicious Injury\)/);
 
+    exhausted(arlo).name = 'Exhausted [-1]'; // the system puts the stack count in the name
     await hudToggle(arlo, 'exhausted');
     assert.ok(exhausted(arlo), 'not removable by hand');
+    assert.equal(env.warnings.at(-1), 'Arlo: Exhausted comes from Vicious Injury. Remove that first.', 'the plain name, no stack count');
 
     await api.apply(arlo, 'exhausted'); // a day without food: one more, by hand
     assert.equal(exhausted(arlo).system.stacks, 2);

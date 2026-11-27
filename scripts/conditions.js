@@ -141,7 +141,7 @@ async function onCreate(effect, options, userId) {
         await serial(actor.uuid, async () => {
             for (const link of entry.links) {
                 if (!actor.effects.has(effect.id)) break; // removed meanwhile
-                await ensureLinked(actor, link, { key: effectKey(effect.id), label: effect.name });
+                await ensureLinked(actor, link, { key: effectKey(effect.id), label: plainName(entry.id) });
             }
         });
     }
@@ -205,14 +205,18 @@ function heldBy(effect, options) {
     const sources = readSources(stored);
     const isGone = goneOn(actor);
     const { held, manual } = holders(sources, isGone);
-    return held.length ? { actor, sources, held, manual, isGone } : null;
+    return held.length ? { id, actor, sources, held, manual, isGone } : null;
 }
 
-function warnHeld(actor, effect, held) {
+/** A condition's plain name: the effect's own name carries the stack count or value ("Exhausted [-2]"), which a
+ * message about holding or a stored source label shouldn't repeat (it may be about to change). */
+const plainName = (id) => statusLabel(id, CONDITIONS_BY_ID[id]?.name);
+
+function warnHeld(hold) {
     ui.notifications?.warn(
         t(
             'notify.held',
-            { actor: actorName(actor), condition: effect.name, source: held.join(', ') },
+            { actor: actorName(hold.actor), condition: plainName(hold.id), source: hold.held.join(', ') },
             '{actor}: {condition} comes from {source}. Remove that first.',
         ),
     );
@@ -227,7 +231,7 @@ function onPreDelete(effect, options) {
         if (isStackable(effect)) update['system.stacks'] = Math.max(1, heldStacks(hold.sources, hold.isGone));
         effect.update(update, engineOptions());
     }
-    warnHeld(hold.actor, effect, hold.held);
+    warnHeld(hold);
     return false;
 }
 
@@ -237,7 +241,7 @@ function onPreUpdate(effect, changes, options) {
     if (typeof next !== 'number' || !isStackable(effect) || next >= (effect.system?.stacks ?? 1)) return;
     const hold = heldBy(effect, options);
     if (!hold || next >= heldStacks(hold.sources, hold.isGone)) return;
-    warnHeld(hold.actor, effect, hold.held);
+    warnHeld(hold);
     return false;
 }
 
