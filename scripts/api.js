@@ -19,7 +19,8 @@ import { SETTINGS, featureMode, weakerMode } from './settings.js';
 import { systemChoices } from './util.js';
 
 /** Changes the API makes for the caller pass the "held by a source" guard (see conditions.js). */
-const ENGINE = Object.freeze({ [MODULE_ID]: { [OPTION_KEYS.ENGINE]: { reason: '' } } });
+/** Options marking a change as the engine's own. A new object each time: Foundry writes into the options it gets. */
+const engine = () => ({ [MODULE_ID]: { [OPTION_KEYS.ENGINE]: { reason: '' } } });
 
 /**
  * Turn the API's `source` option into a stored source.
@@ -89,7 +90,7 @@ async function apply(actor, id, { value, stacks, source, duration } = {}) {
             update[`flags.${MODULE_ID}.${FLAGS.SOURCES}`] = sources;
         }
         if (added) update['system.stacks'] = (effect.system?.stacks ?? 1) + added;
-        if (Object.keys(update).length) await effect.update(update, ENGINE);
+        if (Object.keys(update).length) await effect.update(update, engine());
         if (duration !== undefined) await setDuration(effect, duration);
         return effect;
     }
@@ -131,7 +132,7 @@ async function tie(actor, id, source, { stacks } = {}) {
     } else {
         update[`flags.${MODULE_ID}.${FLAGS.SOURCES}`] = [...others, src];
     }
-    await effect.update(update, ENGINE);
+    await effect.update(update, engine());
     return effect;
 }
 
@@ -159,13 +160,13 @@ async function remove(actor, id, { source, force } = {}) {
             }
             const update = { [`flags.${MODULE_ID}.${FLAGS.SOURCES}`]: next };
             if (CONDITIONS_BY_ID[id]?.stackable) update['system.stacks'] = stacks;
-            await effect.update(update, ENGINE);
+            await effect.update(update, engine());
         }
-        if (orphans.length) await actor.deleteEmbeddedDocuments('ActiveEffect', orphans, ENGINE);
+        if (orphans.length) await actor.deleteEmbeddedDocuments('ActiveEffect', orphans, engine());
         return orphans;
     }
     const ids = effects.map((e) => e.id);
-    await actor.deleteEmbeddedDocuments('ActiveEffect', ids, force ? ENGINE : {});
+    await actor.deleteEmbeddedDocuments('ActiveEffect', ids, force ? engine() : {});
     return ids.filter((i) => !actor.effects.has(i));
 }
 

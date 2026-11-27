@@ -205,6 +205,7 @@ export class FakeEffect {
         this.#sync();
     }
     async update(changes, options = {}) {
+        options.parent = this.parent; // like Foundry, which writes into the options it is given
         // Like Foundry: a preUpdate hook returning false cancels the update.
         if (Hooks.call('preUpdateActiveEffect', this, changes, options, globalThis.game.user.id) === false) return this;
         this.updateSource(changes);
@@ -329,6 +330,7 @@ export class FakeActor extends Actor {
         return created;
     }
     async updateEmbeddedDocuments(type, updates, options = {}) {
+        options.parent = this;
         for (const { _id, ...changes } of updates) {
             const effect = this.effects.get(_id);
             if (!effect) throw new Error(`no effect ${_id}`);
@@ -338,6 +340,7 @@ export class FakeActor extends Actor {
         this.reset();
     }
     async deleteEmbeddedDocuments(type, ids, options = {}) {
+        options.parent = this;
         const deleted = [];
         for (const id of ids) {
             const effect = this.effects.get(id);
