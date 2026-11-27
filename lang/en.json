@@ -1,0 +1,132 @@
+{
+  "ep-cosmere-automations": {
+    "settings": {
+      "enabled": {
+        "name": "Conditions engine",
+        "hint": "Master switch. Off: the module changes nothing and posts nothing."
+      },
+      "chat": {
+        "name": "Chat lines",
+        "hint": "Post a line when a condition starts or ends.",
+        "all": "Everyone",
+        "gm": "GM only",
+        "off": "Off"
+      },
+      "npcGmOnly": {
+        "name": "NPC lines to the GM only",
+        "hint": "Whisper chat lines about actors no player owns to the GM."
+      },
+      "stances": {
+        "name": "Stances",
+        "hint": "Full: using a stance's action switches the stance on (its effects apply) and shows it on the token. Remind: a chat line only."
+      },
+      "condition": {
+        "name": "Condition: {name}",
+        "alsoBy": "Also handled by"
+      },
+      "mode": {
+        "full": "Full: apply its mechanics",
+        "remind": "Remind only: a chat reminder, no changes",
+        "off": "Off"
+      },
+      "durations": {
+        "name": "Durations",
+        "hint": "Full: effects end by themselves when their duration runs out (turns follow Foundry's turn order, as Advanced Encounters sets it). Remind: a chat line says it would end now."
+      },
+      "askDuration": {
+        "name": "Ask for a duration",
+        "hint": "When a condition is turned on from the token or sheet, ask how long it lasts.",
+        "combat": "During combat",
+        "always": "Always",
+        "never": "Never"
+      },
+      "combatEndsScene": {
+        "name": "Ending combat ends the scene",
+        "hint": "When an encounter is ended, also do the end of the scene for its combatants (effects that last until the end of the scene, stances, per-scene uses)."
+      },
+      "sceneRecharge": {
+        "name": "Recharge per-scene uses at the end of a scene",
+        "hint": "Items whose uses recharge per scene (such as Recover) get them back."
+      },
+      "rolls": {
+        "name": "Advantage and disadvantage on tests",
+        "hint": "Full: conditions and situational effects (yours and your target's) set the test's advantage or disadvantage; the roll dialog starts with it selected, so the player can change it. Remind: the chat card lists them, the roll is unchanged. Each condition's own setting must also be full."
+      },
+      "actionEffects": {
+        "name": "Effects from Dodge, Brace and Gain Advantage",
+        "hint": "Full: using these actions puts their effect on the token (Gain Advantage after the player confirms success), and the roll layer reads it. Remind: a chat line only."
+      }
+    },
+    "chat": {
+      "started": "{actor} is now {condition}.",
+      "startedFrom": "{actor} is now {condition} (from {source}).",
+      "ended": "{actor} is no longer {condition}.",
+      "endedBecause": "{actor} is no longer {condition} ({reason} ended).",
+      "alsoApply": "Also apply: {list}.",
+      "stanceStarted": "{actor} takes {stance}.",
+      "stanceEnded": "{actor} is no longer in a stance.",
+      "stanceRemind": "{actor} takes {stance}.",
+      "stanceRemindHint": "Its effects are not switched on automatically (stances are in remind-only mode).",
+      "wouldExpire": "{actor}'s {effect} ends now.",
+      "wouldExpireHint": "Remove it by hand (durations are in remind-only mode).",
+      "effectExpired": "{actor}'s {effect} has ended.",
+      "expired": "{actor} is no longer {condition} (its duration ended).",
+      "longRestRemind": "{actor} finished a long rest.",
+      "longRestRemindHint": "{condition} goes down by {n}.",
+      "longRestEndsHint": "{condition} ends.",
+      "longRestHeld": "{actor} stays {condition} after the long rest (from {source}).",
+      "stanceSceneEnd": "{actor}'s stance ends with the scene.",
+      "recharged": "{actor} recharges {items}.",
+      "rechargeRemind": "{actor} can recharge {items} (end of scene).",
+      "grantAsk": "{actor} tries to gain the advantage over {target}.",
+      "grantButton": "The test succeeded",
+      "situational": "{actor}: {effect}.",
+      "situationalRemind": "{actor}: {effect}.",
+      "situationalEnded": "{actor}'s {effect} ends ({reason}).",
+      "afflictedDamage": "{actor} takes {amount} {type} damage from {effect}.",
+      "afflictedRemind": "{actor}'s {effect} deals its damage now (end of its turn).",
+      "afflictedRemindHint": "Apply {amount} {type} damage (Afflicted is in remind-only mode).",
+      "surprisedSlow": "{actor} is Surprised and cannot take a fast turn: moved to a slow turn.",
+      "surprisedRemind": "{actor} is Surprised and cannot take a fast turn.",
+      "surprisedRemindHint": "Move it to a slow turn (Surprised is in remind-only mode).",
+      "surprisedBossHint": "Skip its fast turn (a boss keeps its slow turn)."
+    },
+    "dialog": {
+      "amount": "Damage",
+      "damageType": "Damage type",
+      "attribute": "Attribute",
+      "bonus": "Amount",
+      "apply": "Apply",
+      "endSceneTitle": "End scene",
+      "endSceneBody": "End the scene for the tokens on this scene? Effects that last until the end of the scene end, stances end and per-scene uses recharge, as the module settings say.",
+      "duration": "Lasts"
+    },
+    "notify": {
+      "immune": "{actor} is immune to {condition}.",
+      "needsTarget": "{action}: target one enemy to track the advantage.",
+      "noGM": "No GM is connected to remove {effect}; remove it by hand.",
+      "held": "{actor}: {condition} comes from {source}. Remove that first."
+    },
+    "effect": {
+      "stance": "Stance: {stance}"
+    },
+    "reason": {
+      "longRest": "long rest",
+      "attacked": "it attacked",
+      "moved": "it moved",
+      "used": "used"
+    },
+    "controls": {
+      "endScene": "End scene (EP Cosmere Automations)"
+    },
+    "duration": {
+      "none": "Until removed",
+      "phaseNextRound": "Until the start of this phase next round",
+      "startOfNextTurn": "Until the start of its next turn",
+      "endOfTurn": "Until the end of its turn",
+      "endOfNextTurn": "Until the end of its next turn",
+      "endOfScene": "Until the end of the scene",
+      "longRest": "Until a long rest"
+    }
+  }
+}
