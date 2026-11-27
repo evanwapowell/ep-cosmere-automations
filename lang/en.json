@@ -73,6 +73,7 @@
       "expired": "{actor} is no longer {condition} (its duration ended).",
       "exhaustionRemind": "{actor} finished a long rest.",
       "exhaustionRemindHint": "Exhausted goes down by 1.",
+      "exhaustionHeld": "{actor} stays {condition} after the long rest (from {source}).",
       "stanceSceneEnd": "{actor}'s stance ends with the scene.",
       "recharged": "{actor} recharges {items}.",
       "rechargeRemind": "{actor} can recharge {items} (end of scene).",
@@ -102,7 +103,8 @@
     "notify": {
       "immune": "{actor} is immune to {condition}.",
       "needsTarget": "{action}: target one enemy to track the advantage.",
-      "noGM": "No GM is connected to remove {effect}; remove it by hand."
+      "noGM": "No GM is connected to remove {effect}; remove it by hand.",
+      "held": "{actor}: {condition} comes from {source}. Remove that first."
     },
     "effect": {
       "stance": "Stance: {stance}"

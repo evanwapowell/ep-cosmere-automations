@@ -4,10 +4,10 @@
  */
 import { CONDITIONS, CONDITIONS_BY_ID } from '../data/conditions.js';
 import { cleanupSources, conditionEffects, createCondition } from './conditions.js';
-import { FLAGS, MODULE_ID } from './constants.js';
+import { FLAGS, MODULE_ID, OPTION_KEYS } from './constants.js';
 import { advanceDays, buildDuration, durationText, endScene, setDuration, useUp } from './durations.js';
 import { activeConditions } from './mechanics.js';
-import { addSource, describeSources, effectKey, itemKey, MANUAL, readSources } from './logic/sources.js';
+import { addSource, describeSources, effectKey, heldStacks, itemKey, MANUAL, readSources } from './logic/sources.js';
 import { normalizeValue } from './logic/values.js';
 import { conditionMode } from './settings.js';
 import { endStance, syncStanceMarker } from './stances.js';
@@ -17,6 +17,9 @@ import { collectModifiers, netMode } from './logic/rolls.js';
 import { SITUATIONAL, SITUATIONAL_BY_ID } from '../data/situational.js';
 import { SETTINGS, featureMode, weakerMode } from './settings.js';
 import { systemChoices } from './util.js';
+
+/** Changes the API makes for the caller pass the "held by a source" guard (see conditions.js). */
+const ENGINE = Object.freeze({ [MODULE_ID]: { [OPTION_KEYS.ENGINE]: { reason: '' } } });
 
 /**
  * Turn the API's `source` option into a stored source.
@@ -63,6 +66,8 @@ async function apply(actor, id, { value, stacks, source, duration } = {}) {
         checkedValue = checked.value;
     }
     const src = toSource(actor, source);
+    const added = entry.stackable ? Math.max(1, stacks ?? 1) : undefined;
+    if (added && src.key !== MANUAL.key) src.stacks = added; // the stacks this source holds
     const existing = conditionEffects(actor, id);
     const durationState = buildDuration(actor, duration !== undefined ? duration : entry.duration);
 
@@ -78,30 +83,66 @@ async function apply(actor, id, { value, stacks, source, duration } = {}) {
         const effect = existing[0];
         const update = {};
         const stored = effect.getFlag(MODULE_ID, FLAGS.SOURCES);
-        const sources = addSource(readSources(stored), src);
-        if (!Array.isArray(stored) || sources.length !== readSources(stored).length) {
+        const before = readSources(stored);
+        const sources = addSource(before, src);
+        if (!Array.isArray(stored) || JSON.stringify(sources) !== JSON.stringify(before)) {
             update[`flags.${MODULE_ID}.${FLAGS.SOURCES}`] = sources;
         }
-        if (entry.stackable) update['system.stacks'] = (effect.system?.stacks ?? 1) + Math.max(1, stacks ?? 1);
-        if (Object.keys(update).length) await effect.update(update);
+        if (added) update['system.stacks'] = (effect.system?.stacks ?? 1) + added;
+        if (Object.keys(update).length) await effect.update(update, ENGINE);
         if (duration !== undefined) await setDuration(effect, duration);
         return effect;
     }
     return createCondition(actor, id, {
         value: checkedValue,
         sources: [src],
-        stacks: entry.stackable ? Math.max(1, stacks ?? 1) : undefined,
+        stacks: added,
         duration: durationState,
     });
 }
 
 /**
- * Remove a condition (every instance of it), or one source of it when `source` is given.
+ * Tie a condition the actor already has to a source (an injury), without adding to it: it then stays until that
+ * source goes, and it can't be removed by hand meanwhile. On Exhausted, `stacks` (default 1) of its stacks
+ * become the source's; it gains stacks only if it has fewer. Applies the condition if it isn't there.
  * @param {Actor} actor
  * @param {string} id
- * @param {{source?: Item | ActiveEffect | string | {key, label}}} [options]
+ * @param {Item | ActiveEffect | string | {key, label}} source
+ * @param {{stacks?: number}} [options]
  */
-async function remove(actor, id, { source } = {}) {
+async function tie(actor, id, source, { stacks } = {}) {
+    const entry = CONDITIONS_BY_ID[id];
+    if (!entry) throw new Error(`Unknown condition "${id}"`);
+    if (!source) throw new Error('tie needs a source');
+    const effect = conditionEffects(actor, id)[0];
+    if (!effect) return apply(actor, id, { source, stacks });
+    const src = toSource(actor, source);
+    const before = readSources(effect.getFlag(MODULE_ID, FLAGS.SOURCES));
+    const others = before.filter((s) => s.key !== src.key && s.key !== MANUAL.key);
+    const update = {};
+    if (entry.stackable) {
+        src.stacks = Math.max(1, stacks ?? 1);
+        const total = effect.system?.stacks ?? 1;
+        const held = heldStacks([...others, src]);
+        const next = Math.max(total, held);
+        if (next !== total) update['system.stacks'] = next;
+        // A hand-applied source stays only while some stacks are left over for it.
+        update[`flags.${MODULE_ID}.${FLAGS.SOURCES}`] = next > held ? [...others, src, { ...MANUAL }] : [...others, src];
+    } else {
+        update[`flags.${MODULE_ID}.${FLAGS.SOURCES}`] = [...others, src];
+    }
+    await effect.update(update, ENGINE);
+    return effect;
+}
+
+/**
+ * Remove a condition (every instance of it), or one source of it when `source` is given (with the stacks that
+ * source held). A condition another source still holds isn't removed (as from the token), unless `force`.
+ * @param {Actor} actor
+ * @param {string} id
+ * @param {{source?: Item | ActiveEffect | string | {key, label}, force?: boolean}} [options]
+ */
+async function remove(actor, id, { source, force } = {}) {
     const effects = conditionEffects(actor, id);
     if (!effects.length) return [];
     if (source) {
@@ -111,15 +152,21 @@ async function remove(actor, id, { source } = {}) {
             const current = readSources(effect.getFlag(MODULE_ID, FLAGS.SOURCES));
             const next = current.filter((s) => s.key !== key);
             if (next.length === current.length) continue;
-            if (next.length) await effect.setFlag(MODULE_ID, FLAGS.SOURCES, next);
-            else orphans.push(effect.id); // nothing holds it any more
+            const stacks = (effect.system?.stacks ?? 1) - (heldStacks(current) - heldStacks(next));
+            if (!next.length || (CONDITIONS_BY_ID[id]?.stackable && stacks <= 0)) {
+                orphans.push(effect.id); // nothing holds it any more
+                continue;
+            }
+            const update = { [`flags.${MODULE_ID}.${FLAGS.SOURCES}`]: next };
+            if (CONDITIONS_BY_ID[id]?.stackable) update['system.stacks'] = stacks;
+            await effect.update(update, ENGINE);
         }
-        if (orphans.length) await actor.deleteEmbeddedDocuments('ActiveEffect', orphans);
+        if (orphans.length) await actor.deleteEmbeddedDocuments('ActiveEffect', orphans, ENGINE);
         return orphans;
     }
     const ids = effects.map((e) => e.id);
-    await actor.deleteEmbeddedDocuments('ActiveEffect', ids);
-    return ids;
+    await actor.deleteEmbeddedDocuments('ActiveEffect', ids, force ? ENGINE : {});
+    return ids.filter((i) => !actor.effects.has(i));
 }
 
 /**
@@ -186,6 +233,7 @@ function modifiers(actor, { target = null, context = 'Skill', skill = null, atta
 export function buildApi() {
     return Object.freeze({
         apply,
+        tie,
         remove,
         list,
         endStance,

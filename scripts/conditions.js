@@ -10,6 +10,8 @@ import {
     addSource,
     describeSources,
     effectKey,
+    heldStacks,
+    holders,
     isSourceGone,
     MANUAL,
     planSourceRemoval,
@@ -25,6 +27,9 @@ import { askDetails } from './values.js';
 export function registerConditionHooks() {
     Hooks.on('createActiveEffect', safe('createActiveEffect', onCreate));
     Hooks.on('deleteActiveEffect', safe('deleteActiveEffect', onDelete));
+    // A condition another source holds can't be removed (or its held stacks taken) by hand (as in PF2e).
+    Hooks.on('preDeleteActiveEffect', safe('preDeleteActiveEffect', onPreDelete));
+    Hooks.on('preUpdateActiveEffect', safe('preUpdateActiveEffect', onPreUpdate));
     // A condition caused by an item (an injury, via the API's `source`) ends with the item.
     Hooks.on(
         'deleteItem',
@@ -156,16 +161,84 @@ export function cleanupSources(actor, reason) {
             itemIds: new Set((actor.items?.contents ?? []).map((i) => i.id)),
         };
         const plan = planSourceRemoval(
-            effects.map((e) => ({ id: e.id, sources: storedSources(e) })),
+            effects.map((e) => ({ id: e.id, sources: storedSources(e), stacks: isStackable(e) ? (e.system?.stacks ?? 1) : undefined })),
             (key) => isSourceGone(key, present),
         );
         const deletes = plan.filter((p) => p.action === 'delete' && actor.effects.has(p.id)).map((p) => p.id);
         const updates = plan
             .filter((p) => p.action === 'update' && actor.effects.has(p.id))
-            .map((p) => ({ _id: p.id, [`flags.${MODULE_ID}.${FLAGS.SOURCES}`]: p.sources }));
-        if (updates.length) await actor.updateEmbeddedDocuments('ActiveEffect', updates);
+            .map((p) => {
+                const update = { _id: p.id, [`flags.${MODULE_ID}.${FLAGS.SOURCES}`]: p.sources };
+                if (p.stacks != null) update['system.stacks'] = p.stacks;
+                return update;
+            });
+        if (updates.length) await actor.updateEmbeddedDocuments('ActiveEffect', updates, engineOptions(reason));
         if (deletes.length) await actor.deleteEmbeddedDocuments('ActiveEffect', deletes, engineOptions(reason));
     });
+}
+
+function isStackable(effect) {
+    return !!CONDITIONS_BY_ID[conditionIdOf(effect.statuses, CONDITIONS_BY_ID)]?.stackable;
+}
+
+/** Whether a source on this effect's actor no longer exists. */
+function goneOn(actor) {
+    const present = {
+        effectIds: new Set((actor.effects?.contents ?? []).map((e) => e.id)),
+        itemIds: new Set((actor.items?.contents ?? []).map((i) => i.id)),
+    };
+    return (key) => isSourceGone(key, present);
+}
+
+/**
+ * The sources still holding a condition the engine tracks, or null when it is free to change by hand.
+ * The engine's own changes (links ending, durations, long rest), the API's `force` and conditions in off mode pass.
+ */
+function heldBy(effect, options) {
+    if (!engineEnabled() || options?.[MODULE_ID]?.[OPTION_KEYS.ENGINE]) return null;
+    const actor = effect.parent;
+    if (!(actor instanceof Actor)) return null;
+    const id = conditionIdOf(effect.statuses, CONDITIONS_BY_ID);
+    if (!id || conditionMode(id) === MODES.OFF) return null;
+    const stored = storedSources(effect);
+    if (!Array.isArray(stored)) return null; // never touched by the engine
+    const sources = readSources(stored);
+    const isGone = goneOn(actor);
+    const { held, manual } = holders(sources, isGone);
+    return held.length ? { actor, sources, held, manual, isGone } : null;
+}
+
+function warnHeld(actor, effect, held) {
+    ui.notifications?.warn(
+        t(
+            'notify.held',
+            { actor: actorName(actor), condition: effect.name, source: held.join(', ') },
+            '{actor}: {condition} comes from {source}. Remove that first.',
+        ),
+    );
+}
+
+/** Removing a held condition by hand: refused; a hand-applied source it also had goes (with its free stacks). */
+function onPreDelete(effect, options) {
+    const hold = heldBy(effect, options);
+    if (!hold) return;
+    if (hold.manual) {
+        const update = { [`flags.${MODULE_ID}.${FLAGS.SOURCES}`]: hold.sources.filter((s) => s.key !== MANUAL.key) };
+        if (isStackable(effect)) update['system.stacks'] = Math.max(1, heldStacks(hold.sources, hold.isGone));
+        effect.update(update, engineOptions());
+    }
+    warnHeld(hold.actor, effect, hold.held);
+    return false;
+}
+
+/** Taking a stackable condition below the stacks its sources hold, by hand: refused. */
+function onPreUpdate(effect, changes, options) {
+    const next = changes?.['system.stacks'] ?? foundry.utils.getProperty(changes ?? {}, 'system.stacks');
+    if (typeof next !== 'number' || !isStackable(effect) || next >= (effect.system?.stacks ?? 1)) return;
+    const hold = heldBy(effect, options);
+    if (!hold || next >= heldStacks(hold.sources, hold.isGone)) return;
+    warnHeld(hold.actor, effect, hold.held);
+    return false;
 }
 
 async function onDelete(effect, options, userId) {

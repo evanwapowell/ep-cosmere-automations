@@ -204,7 +204,9 @@ export class FakeEffect {
         }
         this.#sync();
     }
-    async update(changes) {
+    async update(changes, options = {}) {
+        // Like Foundry: a preUpdate hook returning false cancels the update.
+        if (Hooks.call('preUpdateActiveEffect', this, changes, options, globalThis.game.user.id) === false) return this;
         this.updateSource(changes);
         this.parent?.reset?.();
         return this;
@@ -326,10 +328,11 @@ export class FakeActor extends Actor {
         for (const effect of created) Hooks.callAll('createActiveEffect', effect, options, userId);
         return created;
     }
-    async updateEmbeddedDocuments(type, updates) {
+    async updateEmbeddedDocuments(type, updates, options = {}) {
         for (const { _id, ...changes } of updates) {
             const effect = this.effects.get(_id);
             if (!effect) throw new Error(`no effect ${_id}`);
+            if (Hooks.call('preUpdateActiveEffect', effect, changes, options, globalThis.game.user.id) === false) continue;
             effect.updateSource(changes);
         }
         this.reset();
@@ -339,6 +342,8 @@ export class FakeActor extends Actor {
         for (const id of ids) {
             const effect = this.effects.get(id);
             if (!effect) throw new Error(`no effect ${id} to delete`);
+            // Like Foundry: a preDelete hook returning false keeps the effect.
+            if (Hooks.call('preDeleteActiveEffect', effect, options, globalThis.game.user.id) === false) continue;
             this.effects.delete(id);
             deleted.push(effect);
         }

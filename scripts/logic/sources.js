@@ -4,31 +4,91 @@
  * A condition effect carries a list of sources in its flags. A source is `{ key, label }`:
  * - `key: 'manual'` — someone applied it directly (HUD, sheet, API without a source);
  * - `key: 'effect:<effect id>'` — another condition on the same actor brought it (Prone → Slowed);
- * - `key: 'item:<item id>'` — an item on the same actor caused it (an injury, later).
+ * - `key: 'item:<item id>'` — an item on the same actor caused it (an injury).
  * The condition ends when its last source goes away.
+ *
+ * As in PF2e, a condition another source holds can't be removed by hand while that source is there (Slowed
+ * while Prone; an injury's Exhausted). On a stackable condition (Exhausted), a source also records how many
+ * stacks it holds (`stacks`, default 1). The rest are "free" stacks, applied by hand: only those go down by
+ * hand or with a long rest, and a source's stacks go when the source does.
  */
 
 export const MANUAL = Object.freeze({ key: 'manual', label: 'manual' });
 
+const positiveInt = (n) => Number.isInteger(n) && n > 0;
+
 /**
  * Normalize a stored sources value. Missing or malformed data means "applied by hand".
  * @param {unknown} stored
- * @returns {{key: string, label: string}[]}
+ * @returns {{key: string, label: string, stacks?: number}[]}
  */
 export function readSources(stored) {
     if (!Array.isArray(stored)) return [{ ...MANUAL }];
     const valid = stored.filter((s) => s && typeof s.key === 'string' && s.key);
-    return valid.length ? valid.map((s) => ({ key: s.key, label: String(s.label ?? s.key) })) : [{ ...MANUAL }];
+    if (!valid.length) return [{ ...MANUAL }];
+    return valid.map((s) => {
+        const out = { key: s.key, label: String(s.label ?? s.key) };
+        if (positiveInt(s.stacks) && s.key !== MANUAL.key) out.stacks = s.stacks;
+        return out;
+    });
 }
 
 /**
- * Add a source. Returns a new list; a source with the same key is not added twice.
- * @param {{key: string, label: string}[]} sources
- * @param {{key: string, label: string}} source
+ * Add a source. Returns a new list; a source with the same key is not added twice, but stacks it brings are
+ * added to the ones it already holds.
+ * @param {{key: string, label: string, stacks?: number}[]} sources
+ * @param {{key: string, label: string, stacks?: number}} source
  */
 export function addSource(sources, source) {
-    if (sources.some((s) => s.key === source.key)) return [...sources];
-    return [...sources, { key: source.key, label: source.label ?? source.key }];
+    const extra = source.key !== MANUAL.key && positiveInt(source.stacks) ? source.stacks : 0;
+    if (sources.some((s) => s.key === source.key)) {
+        if (!extra) return [...sources];
+        return sources.map((s) => (s.key === source.key ? { ...s, stacks: (s.stacks ?? 1) + extra } : s));
+    }
+    const added = { key: source.key, label: source.label ?? source.key };
+    if (extra) added.stacks = extra;
+    return [...sources, added];
+}
+
+/**
+ * Stacks held by sources other than a hand-applied one; a source that is gone holds none.
+ * @param {{key: string, stacks?: number}[]} sources
+ * @param {(key: string) => boolean} [isGone]
+ */
+export function heldStacks(sources, isGone = () => false) {
+    return sources.filter((s) => s.key !== MANUAL.key && !isGone(s.key)).reduce((n, s) => n + (s.stacks ?? 1), 0);
+}
+
+/**
+ * What holds a condition, for removal by hand.
+ * @param {{key: string, label: string}[]} sources
+ * @param {(key: string) => boolean} isGone
+ * @returns {{held: string[], manual: boolean}} held: labels of the sources still there (empty: free to remove)
+ */
+export function holders(sources, isGone) {
+    return {
+        held: sources.filter((s) => s.key !== MANUAL.key && !isGone(s.key)).map((s) => s.label),
+        manual: sources.some((s) => s.key === MANUAL.key),
+    };
+}
+
+/**
+ * A long rest takes one free stack off a stackable condition. Stacks a source holds stay.
+ * @param {number} total current stacks
+ * @param {{key: string, label: string, stacks?: number}[]} sources
+ * @returns {{action: 'keep' | 'update' | 'delete', stacks: number, held: number,
+ *   sources?: {key: string, label: string}[]}} sources: given when the hand-applied source should go (no free stack left)
+ */
+export function planLongRest(total, sources) {
+    const held = heldStacks(sources);
+    if (total - held <= 0) return { action: 'keep', stacks: total, held };
+    const stacks = total - 1;
+    if (stacks <= 0) return { action: 'delete', stacks: 0, held };
+    const plan = { action: 'update', stacks, held };
+    if (stacks <= held && sources.some((s) => s.key === MANUAL.key)) {
+        plan.sources = sources.filter((s) => s.key !== MANUAL.key);
+    }
+    return plan;
 }
 
 /**
@@ -61,9 +121,11 @@ export function isSourceGone(key, present) {
  * Plan what happens to the effects on an actor after something ended: every source that no longer exists
  * is dropped, and an effect left without sources ends. Looking at what is gone (rather than at the one
  * thing that just ended) gives the same answer however many deletions happen at once.
- * @param {{id: string, sources: unknown}[]} effects effects with their stored sources (non-array = not ours)
+ * On a stackable condition (`stacks` given), the stacks a gone source held go with it.
+ * @param {{id: string, sources: unknown, stacks?: number}[]} effects effects with their stored sources
+ *   (non-array = not ours) and, for a stackable condition, its current stacks
  * @param {(key: string) => boolean} isGone
- * @returns {{id: string, action: 'delete' | 'update', sources: {key: string, label: string}[]}[]}
+ * @returns {{id: string, action: 'delete' | 'update', sources: {key: string, label: string}[], stacks?: number}[]}
  */
 export function planSourceRemoval(effects, isGone) {
     const plan = [];
@@ -72,7 +134,16 @@ export function planSourceRemoval(effects, isGone) {
         const current = readSources(effect.sources);
         const next = current.filter((s) => !isGone(s.key));
         if (next.length === current.length) continue;
-        plan.push({ id: effect.id, action: next.length ? 'update' : 'delete', sources: next });
+        if (!next.length) {
+            plan.push({ id: effect.id, action: 'delete', sources: next });
+            continue;
+        }
+        if (!positiveInt(effect.stacks)) {
+            plan.push({ id: effect.id, action: 'update', sources: next });
+            continue;
+        }
+        const stacks = effect.stacks - (heldStacks(current) - heldStacks(next));
+        plan.push(stacks > 0 ? { id: effect.id, action: 'update', sources: next, stacks } : { id: effect.id, action: 'delete', sources: next });
     }
     return plan;
 }

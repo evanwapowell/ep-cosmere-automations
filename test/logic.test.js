@@ -7,9 +7,12 @@ import {
     addSource,
     describeSources,
     effectKey,
+    heldStacks,
+    holders,
     isSourceGone,
     itemKey,
     MANUAL,
+    planLongRest,
     planSourceRemoval,
     readSources,
     removeSource,
@@ -246,4 +249,37 @@ test('isEndStance', () => {
     assert.equal(isEndStance('endstance'), true);
     assert.equal(isEndStance('stonestance'), false);
     assert.equal(isEndStance(undefined), false);
+});
+
+/* --- held stacks --- */
+
+test('sources keep the stacks they hold; adding the same source again adds to them', () => {
+    const injury = { key: itemKey('inj'), label: 'Vicious Injury', stacks: 1 };
+    assert.deepEqual(readSources([injury, { key: 'manual', label: 'manual', stacks: 3 }]), [injury, MANUAL], 'manual never holds');
+    assert.deepEqual(readSources([{ key: itemKey('x'), label: 'X', stacks: 0 }]), [{ key: itemKey('x'), label: 'X' }]);
+    assert.deepEqual(addSource([injury], { ...injury, stacks: 2 }), [{ ...injury, stacks: 3 }]);
+    assert.deepEqual(addSource([injury], { key: itemKey('inj'), label: 'Vicious Injury' }), [injury]);
+    assert.equal(heldStacks([injury, MANUAL, { key: effectKey('p'), label: 'P' }]), 2, 'a source without a count holds 1');
+    assert.equal(heldStacks([injury], (k) => k === injury.key), 0, 'a gone source holds none');
+    assert.deepEqual(holders([injury, MANUAL], () => false), { held: ['Vicious Injury'], manual: true });
+    assert.deepEqual(holders([MANUAL], () => false), { held: [], manual: true });
+});
+
+test('a long rest takes only a free stack', () => {
+    const injury = { key: itemKey('inj'), label: 'Vicious Injury', stacks: 1 };
+    assert.deepEqual(planLongRest(1, [injury]), { action: 'keep', stacks: 1, held: 1 });
+    assert.deepEqual(planLongRest(2, [injury, MANUAL]), { action: 'update', stacks: 1, held: 1, sources: [injury] });
+    assert.deepEqual(planLongRest(3, [injury, MANUAL]), { action: 'update', stacks: 2, held: 1 });
+    assert.deepEqual(planLongRest(1, [MANUAL]), { action: 'delete', stacks: 0, held: 0 });
+});
+
+test('when a source goes, the stacks it held go too', () => {
+    const injury = { key: itemKey('inj'), label: 'Vicious Injury', stacks: 2 };
+    const gone = (k) => k === injury.key;
+    assert.deepEqual(planSourceRemoval([{ id: 'ex', stacks: 3, sources: [injury, MANUAL] }], gone), [
+        { id: 'ex', action: 'update', sources: [MANUAL], stacks: 1 },
+    ]);
+    assert.deepEqual(planSourceRemoval([{ id: 'ex', stacks: 2, sources: [injury, MANUAL] }], gone), [
+        { id: 'ex', action: 'delete', sources: [MANUAL] },
+    ], 'no free stack left');
 });

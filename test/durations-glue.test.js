@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { FakeActor, FakeCombat, flush, Hooks, installFakeFoundry } from './fake-foundry.js';
+import { FakeActor, FakeCombat, FakeItem, flush, Hooks, installFakeFoundry } from './fake-foundry.js';
 
 const CONDITION_IDS = ['afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious', 'stunned', 'surprised'];
 const env = installFakeFoundry({
@@ -299,4 +299,98 @@ test('durations off: nothing ends and the dialog does not ask', async () => {
 test('a bad duration is refused', async () => {
     const actor = new FakeActor({ name: 'Rlain' });
     await assert.rejects(api.apply(actor, 'slowed', { duration: 'soonish' }), /unknown duration kind/);
+});
+
+/* --- Held conditions (as in PF2e): a source keeps what it brought --- */
+
+const injuryOn = (name) => {
+    const injury = new FakeItem({ id: randomId(), name: 'Vicious Injury', type: 'injury', documentName: 'Item' });
+    return { actor: new FakeActor({ name, items: [injury] }), injury };
+};
+let idCounter = 0;
+function randomId() {
+    idCounter += 1;
+    return `injury${String(idCounter).padStart(10, '0')}`;
+}
+async function healInjury(actor, injury) {
+    actor.items.delete(injury.id);
+    Hooks.callAll('deleteItem', injury, {}, game.user.id);
+    await flush();
+}
+const exhausted = (actor) => actor.effects.find((e) => e.statuses.has('exhausted'));
+
+test('Slowed from Prone cannot be removed by hand while Prone stays; it goes with Prone', async () => {
+    const lift = new FakeActor({ name: 'Lift' });
+    await hudToggle(lift, 'prone');
+    const before = env.warnings.length;
+    await hudToggle(lift, 'slowed');
+    assert.ok(has(lift, 'slowed'), 'still Slowed');
+    assert.match(env.warnings.at(-1), /Slowed comes from Prone/);
+    assert.equal(env.warnings.length, before + 1);
+    assert.deepEqual(await api.remove(lift, 'slowed'), [], 'the API refuses too');
+    await hudToggle(lift, 'prone');
+    assert.deepEqual(statuses(lift), []);
+});
+
+test('Slowed by hand and from Prone: removing it by hand drops only the hand-applied part', async () => {
+    const lopen = new FakeActor({ name: 'Lopen' });
+    await hudToggle(lopen, 'slowed');
+    await hudToggle(lopen, 'prone');
+    await hudToggle(lopen, 'slowed');
+    const slowed = lopen.effects.find((e) => e.statuses.has('slowed'));
+    assert.deepEqual(slowed.getFlag('ep-cosmere-automations', 'sources').map((s) => s.label), ['Prone']);
+    await hudToggle(lopen, 'prone');
+    assert.deepEqual(statuses(lopen), [], 'nothing holds it any more');
+});
+
+test('remove with force takes a held condition off anyway', async () => {
+    const rlain = new FakeActor({ name: 'Rlain' });
+    await hudToggle(rlain, 'prone');
+    assert.equal((await api.remove(rlain, 'slowed', { force: true })).length, 1);
+    assert.ok(!has(rlain, 'slowed'));
+});
+
+test("an injury's Exhausted survives long rests and goes when the injury heals", async () => {
+    const { actor: arlo, injury } = injuryOn('Arlo');
+    await hudToggle(arlo, 'exhausted'); // set by hand before the module knew about the injury
+    await api.tie(arlo, 'exhausted', injury);
+    assert.equal(exhausted(arlo).system.stacks ?? 1, 1, 'tying adds no stack');
+    assert.deepEqual(exhausted(arlo).getFlag('ep-cosmere-automations', 'sources'), [{ key: `item:${injury.id}`, label: 'Vicious Injury', stacks: 1 }]);
+
+    Hooks.callAll('cosmere-rpg.rest', arlo, 'long');
+    await flush();
+    assert.ok(exhausted(arlo), 'a long rest leaves it');
+    assert.match(env.chat.at(-1).content, /stays .*Exhausted.* after the long rest \(from Vicious Injury\)/);
+
+    await hudToggle(arlo, 'exhausted');
+    assert.ok(exhausted(arlo), 'not removable by hand');
+
+    await api.apply(arlo, 'exhausted'); // a day without food: one more, by hand
+    assert.equal(exhausted(arlo).system.stacks, 2);
+    await exhausted(arlo).update({ 'system.stacks': 0 });
+    assert.equal(exhausted(arlo).system.stacks, 2, 'the HUD cannot take it below what the injury holds');
+    Hooks.callAll('cosmere-rpg.rest', arlo, 'long');
+    await flush();
+    assert.equal(exhausted(arlo).system.stacks, 1, 'the long rest takes the hand-applied stack');
+    assert.deepEqual(exhausted(arlo).getFlag('ep-cosmere-automations', 'sources').map((s) => s.key), [`item:${injury.id}`]);
+
+    await healInjury(arlo, injury);
+    assert.ok(!exhausted(arlo), 'gone with the injury');
+});
+
+test("a source's stacks go with it; the hand-applied ones stay", async () => {
+    const { actor: taren, injury } = injuryOn('Taren');
+    await api.apply(taren, 'exhausted', { source: injury, stacks: 2 });
+    await api.apply(taren, 'exhausted');
+    assert.equal(exhausted(taren).system.stacks, 3);
+    await exhausted(taren).update({ 'system.stacks': 2 });
+    assert.equal(exhausted(taren).system.stacks, 2, 'a free stack can go by hand');
+    await healInjury(taren, injury);
+    assert.ok(!exhausted(taren), 'no free stack was left');
+
+    const { actor: nalara, injury: hers } = injuryOn('Nalara');
+    await api.apply(nalara, 'exhausted', { source: hers });
+    await api.apply(nalara, 'exhausted', { stacks: 2 });
+    await healInjury(nalara, hers);
+    assert.equal(exhausted(nalara).system.stacks, 2);
 });

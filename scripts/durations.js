@@ -12,6 +12,7 @@ import { CONDITIONS_BY_ID } from '../data/conditions.js';
 import { postLine } from './chat.js';
 import { FLAGS, MODES, MODULE_ID, OPTION_KEYS, SYSTEM_ID } from './constants.js';
 import { advance, describeDuration, newDuration, parseDurationSpec, phaseIndex } from './logic/durations.js';
+import { describeSources, planLongRest, readSources } from './logic/sources.js';
 import { isEndStance } from './logic/stances.js';
 import { conditionIdOf } from './logic/table.js';
 import { allActors, conditionMode, featureMode, otherModuleReducesExhaustion, setting, SETTINGS, stanceMode } from './settings.js';
@@ -208,25 +209,40 @@ async function onRest(actor, restType) {
 }
 
 /**
- * A long rest removes one stack of Exhausted (the system leaves this to the GM). Skipped when Cosmere Automated
- * Actions already does it, so the stack isn't taken twice (or the effect deleted twice).
+ * A long rest removes one stack of Exhausted (the system leaves this to the GM), but not the stacks a source
+ * holds: an injury's Exhausted lasts as long as the injury. Skipped when Cosmere Automated Actions already does
+ * it, so the stack isn't taken twice (its change is then refused for held stacks, by conditions.js).
  */
 async function reduceExhaustion(actor) {
     const mode = conditionMode('exhausted');
     if (mode === MODES.OFF || otherModuleReducesExhaustion()) return;
     const effect = actor.effects.find((e) => conditionIdOf(e.statuses, CONDITIONS_BY_ID) === 'exhausted');
     if (!effect) return;
-    const stacks = effect.system?.stacks ?? 1;
-    if (mode === MODES.REMIND) {
+    const sources = readSources(effect.getFlag(MODULE_ID, FLAGS.SOURCES));
+    const plan = planLongRest(effect.system?.stacks ?? 1, sources);
+    const actorLabel = `<b>${esc(actorName(actor))}</b>`;
+    if (plan.action === 'keep') {
         await postLine(
             actor,
-            t('chat.exhaustionRemind', { actor: `<b>${esc(actorName(actor))}</b>` }, '{actor} finished a long rest.'),
-            { reminder: t('chat.exhaustionRemindHint', null, 'Exhausted goes down by 1.') },
+            t(
+                'chat.exhaustionHeld',
+                { actor: actorLabel, condition: `<b>${esc(effect.name)}</b>`, source: esc(describeSources(sources)) },
+                '{actor} stays {condition} after the long rest (from {source}).',
+            ),
         );
         return;
     }
-    if (stacks > 1) await effect.update({ 'system.stacks': stacks - 1 });
-    else await effect.delete({ [MODULE_ID]: { [OPTION_KEYS.ENGINE]: { reason: t('reason.longRest', null, 'long rest') } } });
+    if (mode === MODES.REMIND) {
+        await postLine(actor, t('chat.exhaustionRemind', { actor: actorLabel }, '{actor} finished a long rest.'), {
+            reminder: t('chat.exhaustionRemindHint', null, 'Exhausted goes down by 1.'),
+        });
+        return;
+    }
+    const engine = { [MODULE_ID]: { [OPTION_KEYS.ENGINE]: { reason: t('reason.longRest', null, 'long rest') } } };
+    if (plan.action === 'delete') return effect.delete(engine);
+    const update = { 'system.stacks': plan.stacks };
+    if (plan.sources) update[`flags.${MODULE_ID}.${FLAGS.SOURCES}`] = plan.sources;
+    await effect.update(update, engine);
 }
 
 /* --- End of scene --- */

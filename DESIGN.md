@@ -15,6 +15,7 @@ conditions.
 - **Status:** phases 1–3 written (2026-11-26) and given a first live pass (Foundry 13.351, cosmere-rpg 3.1.2,
   Stormlight Handbook data, Advanced Encounters, Automated Actions): 19 of 21 checks pass on v0.3.1 after six
   fixes; two need a second login. See "Live pass results" below and the "Phase 1/2/3 as built" sections.
+  0.3.2 and 0.3.3 added the rules in "After the live pass" and "Held conditions".
 
 ## Ground rules
 
@@ -631,6 +632,25 @@ the dialog (total d20 + 0). A sword attack opened with disadvantage on a Hidden 
 attacker (senses range 10 ft) had none at 5 ft and a disadvantage at 20 ft. Afterwards every mode setting of this
 module was set to full in Stonewalkers, and Cosmere Automated Actions' "Let conditions modify rolls" turned off (its
 "decrementExhaustion" stays on; ours defers to it).
+
+## Held conditions (0.3.3)
+
+Found while fitting the module to the campaign: a long rest took one Exhausted stack from everyone, including one
+that an injury causes. The rules say an injury's effect lasts as long as the injury, and an effect's own duration
+beats the condition's default ("−1 per long rest" is for Exhausted from hunger, thirst and the like). PF2e handles
+the same thing with granted conditions: off-guard from prone can't be removed while prone stays. So:
+
+- **A held condition can't be removed by hand.** If any of a condition's sources other than "manual" still exists
+  (a parent condition, an item), deleting it from the token, sheet or API is refused with a warning naming the
+  source. If it also had a manual source, that one is dropped instead (with its free stacks). The engine's own
+  changes pass (links ending, durations, long rest), and so does `api.remove(..., { force: true })`.
+- **Stacks belong to sources.** On Exhausted, a source records how many stacks it holds (`stacks`, default 1).
+  The rest are free. A long rest takes a free stack only (a chat line says when it stays: "from Vicious Injury");
+  stacks can't be taken below what the sources hold by hand; a source going takes its stacks with it.
+- **`api.tie(actor, id, source, { stacks })`** ties a condition already on the actor to a source without adding to
+  it (for conditions set before the module knew about the injury).
+- Automated Actions' own long-rest reduction, if left on, is refused for held stacks by the same guard (with the
+  warning), so it can't take an injury's stack either. Turning it off leaves the long rest to this module.
 
 ## Development
 

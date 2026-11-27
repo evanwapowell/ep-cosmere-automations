@@ -12,7 +12,8 @@ in a game until they have been tested on a throwaway scene. See [DESIGN.md](DESI
 - **Conditions with mechanics:** Exhausted (−1 per stack on every skill), Slowed (half movement), Immobilized,
   Restrained and Unconscious (movement 0), Enhanced (+X to one attribute for skills and movement, not defenses).
 - **Linked conditions:** Prone brings Slowed; Unconscious brings Prone. Removing the parent removes what it alone
-  brought.
+  brought. As in PF2e, a condition something else holds (Slowed while Prone, an injury's Exhausted) can't be removed
+  by hand until that source goes.
 - **Values:** Afflicted asks for damage type and amount, Enhanced for attribute and amount; both can have several
   instances.
 - **Stances:** using a stance's action switches the stance on (its effects apply) and shows it on the token.
@@ -20,7 +21,7 @@ in a game until they have been tested on a throwaway scene. See [DESIGN.md](DESI
   creature's (next) turn, the end of the scene, a long rest, a number of days, or until used, whichever comes first.
   Turns follow Foundry's turn pointer as Cosmere Advanced Encounters moves it.
 - **End of scene** (button in the token controls, or ending combat): scene-long effects and stances end, per-scene
-  uses such as Recover recharge. A long rest removes one stack of Exhausted.
+  uses such as Recover recharge. A long rest removes one stack of Exhausted, but not the stacks an injury holds.
 - **Advantage and disadvantage** from conditions (Restrained, Empowered, Disoriented; a Prone or Flying target) and
   from Dodge, Brace, Gain Advantage and Flamestance. The roll dialog opens with it selected so the player can
   change it, and the chat card says why. Advantages and disadvantages cancel one for one.
@@ -47,7 +48,9 @@ await api.mark(actor, 'advantage', { target: enemy });   // Gain Advantage succe
 api.modifiers(actor, { target: enemy, context: 'Attack', attackType: 'melee' }); // preview
 await api.endScene();          // the tokens on the viewed scene
 await api.advanceDays(1);
+await api.tie(actor, 'exhausted', injuryItem);          // an existing condition now lasts as long as the injury
 await api.remove(actor, 'prone');
+await api.remove(actor, 'slowed', { force: true });       // even while Prone holds it
 api.list(actor); // [{ id, name, value, stacks, sources, from, active, mode }]
 await api.endStance(actor);
 ```
