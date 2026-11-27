@@ -59,6 +59,38 @@ api.list(actor); // [{ id, name, value, stacks, sources, from, active, mode }]
 await api.endStance(actor);
 ```
 
+## Give your own effects rules
+
+Any Active Effect (a talent's, an item's, a homebrew one, or one of the module's conditions) can carry rules of its
+own. As GM, open the effect's sheet and pick **Rules** in the header's controls menu: the dialog shows what the
+effect does now and where each part comes from, and takes the effect's own rules as JSON. A field you set replaces
+the default as a whole; a field you leave out keeps it. Save stays disabled while the rules have problems; "Reset to
+defaults" takes the effect's own rules away. The schema is under "Rules on effects" in `DESIGN.md`.
+
+A talent effect that gives advantage on Athletics tests:
+
+```json
+{ "rolls": [{ "who": "self", "mode": "advantage", "tests": { "skills": ["ath"] } }] }
+```
+
+A homebrew effect that halves movement and brings Slowed with it (links are followed when the effect is applied,
+so set them before you put the effect on an actor):
+
+```json
+{ "mechanics": [{ "kind": "movement", "op": "half" }], "links": ["slowed"] }
+```
+
+The same through the API:
+
+```js
+api.rules(effect);                       // { rules, own, defaults, from: { mechanics: 'effect', … }, problems, … }
+await api.setRules(effect, { mechanics: [{ kind: 'movement', op: 'half' }] }); // { ok, problems, rules }
+await api.setRules(effect, null);        // back to the defaults
+api.validateRules({ links: ['nope'] });  // ['links: unknown condition "nope"']
+```
+
+Rules on effects that are not conditions follow the setting "Rules on other effects".
+
 ## Development
 
 `npm test` (or `node --test`) runs the tests: the pure logic, plus a smoke test of the Foundry glue against a small

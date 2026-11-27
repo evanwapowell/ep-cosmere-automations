@@ -361,3 +361,25 @@ export function resolveRules(ownRules, defaultEntry, known) {
 export function defaultDuration(rules) {
     return durationKinds(rules?.duration).length ? rules.duration : undefined;
 }
+
+/**
+ * Where an effect's rules come from, for authoring (the API's `rules(effect)` and the Rules dialog): the resolved
+ * rules, the effect's own and the table's defaults side by side, and for each resolved field whether the effect or
+ * the defaults gave it.
+ * @param {unknown} ownRules the value of the effect's `rules` flag
+ * @param {object | null | undefined} defaultEntry as for `resolveRules`
+ * @param {object} [known] valid ids, as for `parseRules`
+ * @returns {{rules: Rules, own: Rules | null, defaults: Rules, from: Record<string, 'effect' | 'default'>,
+ *   problems: string[]}} own: the effect's own rules, normalized (null when it has none, or they are invalid);
+ *   from: one entry per field `rules` has, besides `schema`; problems: why its own rules are ignored, if they are
+ */
+export function explainRules(ownRules, defaultEntry, known) {
+    const own = parseRules(ownRules, known);
+    const { rules, problems } = resolveRules(ownRules, defaultEntry, known);
+    const from = {};
+    for (const field of RESOLVED_FIELDS) {
+        if (rules[field] === undefined) continue;
+        from[field] = own.rules?.[field] != null ? 'effect' : 'default';
+    }
+    return { rules, own: own.rules, defaults: defaultRules(defaultEntry), from, problems };
+}

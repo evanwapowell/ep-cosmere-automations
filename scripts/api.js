@@ -17,6 +17,7 @@ import { modeOf, situationFor } from './rolls.js';
 import { rollFacts } from './logic/predicates.js';
 import { collectModifiers, netMode } from './logic/rolls.js';
 import { SITUATIONAL } from '../data/situational.js';
+import { checkRules, explainEffect, setOwnRules } from './rules.js';
 import { systemChoices } from './util.js';
 
 /** Changes the API makes for the caller pass the "held by a source" guard (see conditions.js). */
@@ -231,6 +232,41 @@ function modifiers(actor, { target = null, context = 'Skill', skill = null, atta
     return { modifiers: mods, mode: netMode(base, mods), facts: [...rollFacts(situation)].sort() };
 }
 
+/**
+ * An effect's rules: what it does now, its own rules and the table's defaults, and where each field comes from.
+ * @param {ActiveEffect} effect
+ * @returns {{rules: object, own: object | null, stored: unknown, defaults: object,
+ *   from: Record<string, 'effect' | 'default'>, problems: string[], defaultsFrom: object | null}}
+ *   rules: resolved (what the module applies); own: the effect's own rules, normalized (null when none or invalid);
+ *   stored: the flag as saved; defaults: the table's rules for this effect ({schema: 1} when none);
+ *   from: for each field of `rules`, whether the effect or the defaults gave it; problems: why the effect's own
+ *   rules are ignored, if they are; defaultsFrom: {condition}, {situational} or {stance}, or null
+ */
+function rules(effect) {
+    if (effect?.documentName !== 'ActiveEffect') throw new TypeError('rules needs an ActiveEffect');
+    return explainEffect(effect);
+}
+
+/**
+ * Give an effect rules of its own (schema 1; see "Rules on effects" in DESIGN.md), or with null take them away so
+ * the table's defaults apply again. Invalid rules are not saved and do not throw: the problems are returned.
+ * @param {ActiveEffect} effect
+ * @param {object | null} newRules
+ * @returns {Promise<{ok: boolean, problems: string[], rules: object | null}>}
+ */
+function setRules(effect, newRules) {
+    return setOwnRules(effect, newRules);
+}
+
+/**
+ * Check rules without saving them.
+ * @param {unknown} rules
+ * @returns {string[]} problems; empty when valid
+ */
+function validateRules(rules) {
+    return checkRules(rules);
+}
+
 export function buildApi() {
     return Object.freeze({
         apply,
@@ -247,6 +283,9 @@ export function buildApi() {
         mark,
         marks,
         modifiers,
+        rules,
+        setRules,
+        validateRules,
         conditions: CONDITIONS,
         situational: SITUATIONAL,
     });

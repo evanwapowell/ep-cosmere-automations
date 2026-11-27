@@ -4,6 +4,7 @@
 import { CONDITIONS } from '../data/conditions.js';
 import { SITUATIONAL } from '../data/situational.js';
 import { buildApi } from './api.js';
+import { registerAuthoringHooks } from './authoring.js';
 import { registerConditionHooks } from './conditions.js';
 import { registerDurationHooks } from './durations.js';
 import { MODULE_ID, SYSTEM_ID } from './constants.js';
@@ -41,6 +42,7 @@ Hooks.once('init', () => {
     registerSituationalHooks();
     registerRollHooks();
     registerRelay();
+    registerAuthoringHooks();
 
     const module = game.modules.get(MODULE_ID);
     if (module) module.api = buildApi();
