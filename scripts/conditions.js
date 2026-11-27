@@ -19,6 +19,8 @@ import {
 } from './logic/sources.js';
 import { conditionIdOf } from './logic/table.js';
 import { instanceId } from './logic/values.js';
+import { defaultDuration } from './logic/rules.js';
+import { rulesOf } from './rules.js';
 import { buildDuration, durationText, shouldAskDuration } from './durations.js';
 import { conditionMode, engineEnabled, featureMode, SETTINGS } from './settings.js';
 import { actorName, esc, safe, serial, statusLabel, t } from './util.js';
@@ -106,6 +108,8 @@ async function onCreate(effect, options, userId) {
     const mode = conditionMode(id);
     if (mode === MODES.OFF) return;
     const entry = CONDITIONS_BY_ID[id];
+    const rules = rulesOf(effect);
+    const defaultSpec = defaultDuration(rules);
 
     // Value and duration first, so the chat line can show them. The engine and the API set their own.
     const byEngine = !!options?.[MODULE_ID]?.[OPTION_KEYS.ENGINE];
@@ -114,14 +118,14 @@ async function onCreate(effect, options, userId) {
     const askDuration = !byEngine && !hasDuration && shouldAskDuration();
     if (askValue || askDuration) {
         await askDetails(effect, id, actorName(actor), { askValue, askDuration });
-    } else if (!byEngine && !hasDuration && entry.duration && featureMode(SETTINGS.DURATIONS) !== MODES.OFF) {
-        const duration = buildDuration(actor, entry.duration);
+    } else if (!byEngine && !hasDuration && defaultSpec && featureMode(SETTINGS.DURATIONS) !== MODES.OFF) {
+        const duration = buildDuration(actor, defaultSpec);
         if (duration) await effect.setFlag(MODULE_ID, FLAGS.DURATION, duration);
     }
     if (!actor.effects.has(effect.id)) return; // removed while the dialog was open
 
     const from = describeSources(readSources(storedSources(effect)));
-    const links = (entry.links ?? []).map((link) => statusLabel(link, CONDITIONS_BY_ID[link]?.name));
+    const links = (rules.links ?? []).map((link) => statusLabel(link, CONDITIONS_BY_ID[link]?.name));
     let reminder;
     if (mode === MODES.REMIND) {
         reminder = entry.summary;
@@ -137,9 +141,9 @@ async function onCreate(effect, options, userId) {
         { reminder, detail: effect.getFlag(MODULE_ID, FLAGS.DURATION) ? durationText(effect) : undefined },
     );
 
-    if (mode === MODES.FULL && entry.links?.length) {
+    if (mode === MODES.FULL && rules.links?.length) {
         await serial(actor.uuid, async () => {
-            for (const link of entry.links) {
+            for (const link of rules.links) {
                 if (!actor.effects.has(effect.id)) break; // removed meanwhile
                 await ensureLinked(actor, link, { key: effectKey(effect.id), label: plainName(entry.id) });
             }

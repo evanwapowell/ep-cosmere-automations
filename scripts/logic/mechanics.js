@@ -6,27 +6,32 @@
  * `prepareSecondaryDerivedData`, after active effects. "Half your movement" needs that derived
  * number, and doing Exhausted here avoids relying on how a stacked change string is evaluated.
  */
-import { MECHANICS } from '../../data/conditions.js';
+import { defaultRules, MECHANIC_KINDS } from './rules.js';
 
 /**
  * Which adjustments apply, from the actor's active conditions.
- * @param {{id: string, stacks?: number}[]} active active condition effects (one per effect)
+ * @param {{id: string, stacks?: number, rules?: object}[]} active active condition effects (one per effect);
+ *   `rules` are the effect's resolved rules (scripts/rules.js), else the table's defaults for `id` are used
  * @param {Record<string, object>} byId the condition table by id
  * @param {(id: string) => boolean} isFull whether a condition is in "full" mode
  * @returns {{noMovement: string[], halfMovement: string[], skillPenalty: number, penaltySources: string[]}}
+ *   skillPenalty: what the `skillModifier` records for all skills take off (a penalty is a positive number)
  */
 export function planAdjustments(active, byId, isFull) {
     const plan = { noMovement: [], halfMovement: [], skillPenalty: 0, penaltySources: [] };
-    for (const { id, stacks } of active) {
-        const entry = byId[id];
-        if (!entry || !isFull(id)) continue;
-        const mechanics = entry.mechanics ?? [];
-        if (mechanics.includes(MECHANICS.NO_MOVEMENT) && !plan.noMovement.includes(id)) plan.noMovement.push(id);
-        if (mechanics.includes(MECHANICS.HALF_MOVEMENT) && !plan.halfMovement.includes(id)) plan.halfMovement.push(id);
-        if (mechanics.includes(MECHANICS.SKILL_PENALTY_PER_STACK)) {
-            const n = Number.isFinite(stacks) && stacks > 0 ? Math.floor(stacks) : 1;
-            plan.skillPenalty += n;
-            if (!plan.penaltySources.includes(id)) plan.penaltySources.push(id);
+    for (const { id, stacks, rules: own } of active) {
+        const rules = own ?? (byId[id] ? defaultRules(byId[id]) : null);
+        if (!rules || !isFull(id)) continue;
+        for (const record of rules.mechanics ?? []) {
+            if (record.kind === MECHANIC_KINDS.MOVEMENT) {
+                const list = record.op === 'zero' ? plan.noMovement : plan.halfMovement;
+                if (!list.includes(id)) list.push(id);
+            } else if (record.kind === MECHANIC_KINDS.SKILL_MODIFIER && record.skills === 'all') {
+                // Listed skills and fixed attribute bonuses are for the mechanics layer's own step (#4).
+                const n = record.perStack ? (Number.isFinite(stacks) && stacks > 0 ? Math.floor(stacks) : 1) : 1;
+                plan.skillPenalty -= record.amount * n;
+                if (!plan.penaltySources.includes(id)) plan.penaltySources.push(id);
+            }
         }
     }
     return plan;

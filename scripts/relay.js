@@ -3,8 +3,8 @@
  * Today: using up a situational effect on an actor the player doesn't own (their attack uses up the target's
  * Dodging). Each request is checked on the GM's side; nothing else is accepted.
  */
-import { SITUATIONAL_BY_ID } from '../data/situational.js';
-import { FLAGS, MODULE_ID, OPTION_KEYS } from './constants.js';
+import { MODULE_ID, OPTION_KEYS } from './constants.js';
+import { rulesOf } from './rules.js';
 import { isActiveGM, safe, t, warn } from './util.js';
 
 const CHANNEL = `module.${MODULE_ID}`;
@@ -13,10 +13,9 @@ export function registerRelay() {
     Hooks.once('ready', () => game.socket?.on(CHANNEL, safe('relay', onMessage)));
 }
 
-/** Whether an effect is one the relay may use up: a situational effect with a rule that is used up by a test. */
+/** Whether an effect is one the relay may use up: one with a roll rule that is used up by a test. */
 function isConsumable(effect) {
-    const entry = SITUATIONAL_BY_ID[effect?.getFlag?.(MODULE_ID, FLAGS.SITUATIONAL)];
-    return !!entry?.rolls?.some((rule) => rule.consume);
+    return !!effect && !!rulesOf(effect).rolls?.some((rule) => rule.consume);
 }
 
 async function onMessage(message) {

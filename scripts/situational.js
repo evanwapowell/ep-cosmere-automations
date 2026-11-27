@@ -7,6 +7,8 @@ import { SITUATIONAL, SITUATIONAL_BY_ID, situationalStatus } from '../data/situa
 import { postLine } from './chat.js';
 import { FLAGS, MODES, MODULE_ID, OPTION_KEYS, SYSTEM_ID } from './constants.js';
 import { buildDuration } from './durations.js';
+import { defaultDuration, defaultRules } from './logic/rules.js';
+import { ruleEffects } from './rules.js';
 import { featureMode, SETTINGS } from './settings.js';
 import { actorName, createOwnEffects, esc, safe, t } from './util.js';
 
@@ -17,15 +19,11 @@ export function registerSituationalHooks() {
     Hooks.on('updateToken', safe('updateToken (situational)', onUpdateToken));
 }
 
-/** The situational effects on an actor: [{id, effectId, value, effect}]. */
+/** The situational effects on an actor: [{id, effectId, value, effect, rules}]. */
 export function situationalEffects(actor) {
-    const list = [];
-    for (const effect of actor?.effects ?? []) {
-        if (effect.disabled) continue;
-        const id = effect.getFlag?.(MODULE_ID, FLAGS.SITUATIONAL);
-        if (id && SITUATIONAL_BY_ID[id]) list.push({ id, effectId: effect.id, value: effect.getFlag(MODULE_ID, FLAGS.VALUE) ?? null, effect });
-    }
-    return list;
+    return ruleEffects(actor)
+        .filter((row) => row.situationalId)
+        .map(({ situationalId, effect, value, rules }) => ({ id: situationalId, effectId: effect.id, value, effect, rules }));
 }
 
 /** The single targeted token's actor, or null (none, several, or the user's own actor). */
@@ -57,7 +55,7 @@ export async function createSituational(actor, id, { target = null, img, duratio
         );
     }
 
-    const state = buildDuration(actor, duration !== undefined ? duration : entry.duration);
+    const state = buildDuration(actor, duration !== undefined ? duration : defaultDuration(defaultRules(entry)));
     const data = {
         name: value ? `${entry.name}: ${value.targetName}` : entry.name,
         img: img ?? entry.img,
@@ -81,12 +79,12 @@ export async function createSituational(actor, id, { target = null, img, duratio
  */
 export async function endOn(actor, trigger) {
     if (!actor?.isOwner) return;
-    const ending = situationalEffects(actor).filter((s) => SITUATIONAL_BY_ID[s.id].endsWhen?.includes(trigger));
+    const ending = ruleEffects(actor).filter((row) => row.rules.endsWhen?.includes(trigger));
     if (!ending.length) return;
     const reason = trigger === 'attack' ? t('reason.attacked', null, 'it attacked') : t('reason.moved', null, 'it moved');
     await actor.deleteEmbeddedDocuments(
         'ActiveEffect',
-        ending.map((s) => s.effectId),
+        ending.map((s) => s.effect.id),
         { [MODULE_ID]: { [OPTION_KEYS.ENGINE]: { reason } } },
     );
     await postLine(

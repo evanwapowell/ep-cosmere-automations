@@ -666,9 +666,20 @@ stance, item or homebrew effect can carry "disadvantage on ranged attacks" or "h
 this module's source. Until now an effect's *state* was on the effect (`value`, `sources`, `duration` in its flags)
 and its *rules* were looked up from the tables by status id.
 
-**This step only fixes the shape.** `scripts/logic/rules.js` has the validator, the normalizer and a converter
-from the tables; `FLAGS.RULES` names the flag. Nothing reads the flag yet, so nothing at the table changes. The
-resolver and the layers that read rules are the following steps (#3 to #6).
+**Step 1 (#2) fixed the shape.** `scripts/logic/rules.js` has the validator, the normalizer and a converter
+from the tables; `FLAGS.RULES` names the flag.
+
+**Step 2 (#3) added the one resolver.** `resolveRules(ownRules, defaultEntry)` (pure, in `rules.js`) merges an
+effect's own rules over the table's defaults; `scripts/rules.js` has the glue: `rulesOf(effect)`,
+`ruleEffects(actor)` (enabled, unsuppressed effects with any rules; `{ includeEmpty: true }` also the marker
+conditions) and `describeEffect(effect)`. Every layer now reads rules through it: `activeConditions` and
+`planAdjustments`, the roll layer's `sideOf` and `collectModifiers`, a condition's `links` and default duration,
+the long-rest step, a situational effect's `endsWhen`, and the relay's `consume`. Pure functions take an effect's
+resolved `rules` when given and otherwise convert the table entry, so their old signatures still work. The tables
+are still read directly for identity, by the validators, and for a stance's roll rules (a stance is not an
+effect; #5 folds it in). Layers still understand only what the tables could say (`planAdjustments` reads
+movement and all-skill `skillModifier` records; listed skills and fixed attribute bonuses are #4's), so an effect's
+own rules can already change which table behaviour applies. The following steps (#4 to #6) widen each layer.
 
 ### The shape
 
@@ -722,7 +733,7 @@ existing worlds need no migration and a fix to the table still reaches condition
   (for `longRest`, `0`) means "none of this kind", and overrides a default: `links: []` on a Prone effect is a
   Prone that doesn't bring Slowed; `longRest: 0` on Exhausted is one a long rest leaves alone.
 - **An effect with invalid rules counts as having none of its own.** If its rules have any problem, all of them
-  are ignored and the defaults apply (the resolver, #3, warns once per effect); a half-understood set of rules is
+  are ignored and the defaults apply (the resolver warns once per effect); a half-understood set of rules is
   never applied in part.
 
 ### Mechanics as records

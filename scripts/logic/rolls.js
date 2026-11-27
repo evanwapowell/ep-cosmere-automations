@@ -6,6 +6,8 @@
  * d20, so whatever is left over decides the mode.
  */
 import { ROLL_MODES, ROLL_TESTS, ROLL_WHO } from '../../data/conditions.js';
+// rules.js imports ruleError from here; both only use the other's exports inside functions, so the cycle is safe.
+import { defaultRules } from './rules.js';
 
 export const ADV = 'advantage';
 export const DIS = 'disadvantage';
@@ -82,6 +84,12 @@ export function ruleMatchesTest(rule, test) {
     return false;
 }
 
+/** The roll rules of an effect: its resolved rules' if given, else the table entry's defaults. */
+function rollsOf(rules, entry) {
+    if (rules) return rules.rolls ?? [];
+    return entry ? (defaultRules(entry).rolls ?? []) : [];
+}
+
 /**
  * Collect the modifiers that apply to a test.
  *
@@ -95,8 +103,10 @@ export function ruleMatchesTest(rule, test) {
  * @param {(key: string) => 'full' | 'remind' | 'off'} sources.modeOf  mode of a condition id or 'situational:<id>'
  * @returns {Modifier[]}
  *
- * @typedef {{ uuid: string, name: string, conditions: string[],
- *   situational: {id: string, effectId: string, value?: object}[], stance?: string | null }} Side
+ * @typedef {{ uuid: string, name: string, conditions: (string | {id: string, rules?: object})[],
+ *   situational: {id: string, effectId: string, value?: object, rules?: object}[], stance?: string | null }} Side
+ *   `rules`: the effect's resolved rules (scripts/rules.js); without them the table's defaults for the id are used.
+ *   The stance's roll rules always come from the table (stances are not effects; folded in by #5).
  * @typedef {{ key: string, label: string, mode: string, active: boolean, side: 'self' | 'target',
  *   consume?: {actorUuid: string, effectId: string} }} Modifier
  *   active: false when the source is in remind-only mode (shown, not applied)
@@ -118,17 +128,18 @@ export function collectModifiers({ roller, target, test }, { conditions, situati
     for (const [who, side] of sides) {
         if (!side) continue;
         const seen = new Set();
-        for (const id of side.conditions ?? []) {
+        for (const item of side.conditions ?? []) {
+            const id = typeof item === 'string' ? item : item.id;
             if (seen.has(id)) continue; // several instances of a condition count once
             seen.add(id);
-            for (const rule of conditions[id]?.rolls ?? []) {
+            for (const rule of rollsOf(item.rules, conditions[id])) {
                 if (rule.who !== who || !ruleMatchesTest(rule, test)) continue;
                 add(id, conditions[id].name, rule, who, side);
             }
         }
         for (const effect of side.situational ?? []) {
             const entry = situational[effect.id];
-            for (const rule of entry?.rolls ?? []) {
+            for (const rule of rollsOf(effect.rules, entry)) {
                 if (rule.who !== who || !ruleMatchesTest(rule, test)) continue;
                 if (rule.vsTarget && (!target || effect.value?.targetUuid !== target.uuid)) continue;
                 const label = rule.vsTarget && effect.value?.targetName ? `${entry.name} (${effect.value.targetName})` : entry.name;
@@ -138,7 +149,7 @@ export function collectModifiers({ roller, target, test }, { conditions, situati
         if (side.stance) {
             for (const entry of Object.values(situational)) {
                 if (entry.stance !== side.stance) continue;
-                for (const rule of entry.rolls ?? []) {
+                for (const rule of rollsOf(null, entry)) {
                     if (rule.who !== who || !ruleMatchesTest(rule, test)) continue;
                     add(`situational:${entry.id}`, entry.name, rule, who, side);
                 }

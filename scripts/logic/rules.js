@@ -308,3 +308,52 @@ export function entryToRules(entry) {
     if (!durationKinds(parsed.rules.duration).length) delete parsed.rules.duration;
     return parsed.rules;
 }
+
+/**
+ * The rules a table entry stands for (`entryToRules`), for callers that may have no resolved rules to hand. Not
+ * remembered: the table is read as it is now, and an entry is a few records, cheap to convert.
+ * @param {object | null | undefined} entry
+ * @returns {Rules}
+ */
+export function defaultRules(entry) {
+    return entryToRules(entry);
+}
+
+/** The fields rules can leave unset, which resolve one by one (everything but `schema`). */
+const RESOLVED_FIELDS = RULE_FIELDS.filter((field) => field !== 'schema');
+
+/**
+ * The rules an effect has: its own, field by field, over the table's defaults. See "Defaults and overrides" in
+ * DESIGN.md.
+ *
+ * - A field the effect's own rules set (even to an empty list or 0) replaces the default as a whole.
+ * - A field it doesn't set takes the default of `defaultEntry`, if there is one.
+ * - Own rules with any problem are ignored entirely (never part of them), and the problems are reported so the
+ *   caller can warn; the defaults then apply.
+ *
+ * @param {unknown} ownRules the value of the effect's `rules` flag
+ * @param {object | null | undefined} defaultEntry the table entry (data/conditions.js or data/situational.js)
+ *   whose rules are the defaults for this effect, if any
+ * @param {object} [known] valid ids, as for `parseRules`
+ * @returns {{rules: Rules, problems: string[]}} `rules` is read-only (it may share lists with the defaults);
+ *   `problems` is empty unless the effect's own rules were ignored
+ */
+export function resolveRules(ownRules, defaultEntry, known) {
+    const own = parseRules(ownRules, known);
+    const defaults = defaultRules(defaultEntry);
+    const rules = { schema: RULES_SCHEMA };
+    for (const field of RESOLVED_FIELDS) {
+        const value = own.rules?.[field] ?? defaults[field];
+        if (value !== undefined) rules[field] = value;
+    }
+    return { rules, problems: own.problems };
+}
+
+/**
+ * The default duration of resolved rules, as `buildDuration` takes it; undefined when there is none.
+ * @param {Rules | null | undefined} rules
+ * @returns {string[] | {kinds: string[], days: number} | undefined}
+ */
+export function defaultDuration(rules) {
+    return durationKinds(rules?.duration).length ? rules.duration : undefined;
+}
