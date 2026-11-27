@@ -915,10 +915,10 @@ against, whichever of the two carries the rule: in a `who: 'target'` rule (Prone
 | `test:attack` | The test is an attack test. |
 | `test:skill:<skill id>` | The test uses that skill (`test:skill:prc`). An attack has its weapon skill too. |
 | `attack:melee`, `attack:ranged` | The attack is of that kind (`attackTypeOf`); neither when it can't be told. Only on an attack test. |
-| `self:condition:<condition id>` | The roller has that condition: an id of the condition table, on an enabled effect. A condition with no rules of its own (Surprised) counts, and so does one whose setting is remind-only or off: the fact says it is there, not that the module applies it. |
+| `self:condition:<status id>` | The roller has that status on an enabled, unsuppressed effect: a condition of the table, or any other status id an effect carries (`effect.statuses`), so a homebrew status works (`target:condition:ep-hexed`). A table condition with no rules of its own (Surprised) counts, and so does one whose setting is remind-only or off: the fact says it is there, not that the module applies it. |
 | `self:stance:<stance id>` | The roller is in that stance (the stance talent's system id, from the system's `mode.stance` flag). |
 | `self:is:<actor uuid>` | Who the roller is. |
-| `target:condition:<id>`, `target:stance:<id>`, `target:is:<uuid>` | The same three for the roller's single target. |
+| `target:condition:<status id>`, `target:stance:<id>`, `target:is:<uuid>` | The same three for the roller's single target. |
 | `target:beyond-senses` | The target was measured to be farther away than the roller's senses reach. The distance is only measured when a rule of either side names this fact. |
 
 A fact that isn't known to be true is not there, so it reads as false: with no single target there are no
@@ -942,8 +942,10 @@ can say any combination of facts. Nothing in it reads numbers (stacks, distances
   has never heard of; anything that isn't a term is false too. No `when`, or an empty one, always holds.
 - **Checking** (`validatePredicate(when, known?)`, and through it `ruleError` and `validateRules`) is strict, like
   the rest of the rules: `when` must be a list; a fact must have one of the shapes above (`target:prone` is
-  reported with the list of known shapes); condition and skill ids are checked when the valid ones are known (the
-  glue knows the table's conditions, so `self:condition:<an id the table doesn't have>` is refused); an empty `or`,
+  reported with the list of known shapes); skill ids are checked when the valid ones are known; condition ids are
+  not: any id-shaped status (non-empty) is accepted, because a homebrew status is not in the table and the
+  validator can't know every status a world defines. The price is that a misspelt status is silent: it simply never
+  matches, where a misspelt skill is still refused. `api.modifiers(…).facts` shows what a side really has; an empty `or`,
   an empty list inside a term, a term with another key (`and`), and terms nested more than 8 deep are problems.
   As with every other problem, the effect's own rules are then ignored as a whole and its defaults apply.
 - **Normalizing** keeps `when` as written (a clean copy, nothing reordered or flattened); an empty `when` is

@@ -202,13 +202,19 @@ export function sideSources(rows, { stance = null, conditions, situational }) {
 }
 
 /**
- * The table conditions a side has, for the facts of a test (`self:condition:<id>`): every condition among its
- * effects, whether or not it has roll rules.
+ * The statuses a side has, for the facts of a test (`self:condition:<id>`): every table condition among its
+ * effects, whether or not it has roll rules, and every other status id its effects carry (`effect.statuses`),
+ * so a rule can ask for a homebrew status. The rows are the enabled, unsuppressed effects (`ruleEffects`).
  * @param {Row[]} rows the actor's effects, those with no rules included
- * @returns {string[]} condition ids, no repeats
+ * @returns {string[]} status ids, no repeats
  */
 export function sideConditions(rows) {
-    return [...new Set((rows ?? []).map((row) => row.conditionId).filter(Boolean))];
+    const ids = new Set();
+    for (const row of rows ?? []) {
+        if (row.conditionId) ids.add(row.conditionId);
+        for (const id of row.effect?.statuses ?? []) if (typeof id === 'string' && id) ids.add(id);
+    }
+    return [...ids];
 }
 
 /**

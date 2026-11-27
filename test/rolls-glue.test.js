@@ -595,6 +595,28 @@ test('facts about the roller: its conditions and its stance', async () => {
     assert.equal(roll.options[MODULE].note, 'Advantage: Empowered.', 'Empowered switches the rule off and adds its own');
 });
 
+test('a `when` on a homebrew status: matches only while an enabled, unsuppressed effect carries it', async () => {
+    reset();
+    const kal = new FakeActor({ name: 'Kal' });
+    const brute = new FakeActor({ name: 'Brute' });
+    await ruleEffect(kal, 'Hexbreaker', [{ who: 'self', mode: 'advantage', tests: 'attack', when: ['target:condition:ep-hexed'] }]);
+    target(brute);
+    const swing = async () => (await rollAttack(kal, sword(kal), { fastForward: true })).options.advantageMode;
+    assert.equal(await swing(), 'none', 'no status yet');
+
+    const [hex] = await brute.createEmbeddedDocuments('ActiveEffect', [{ name: 'Hexed', statuses: ['ep-hexed', 'ep-cursed'] }]);
+    await flush();
+    assert.equal(await swing(), 'advantage');
+    assert.ok(api.modifiers(kal, { target: brute, context: 'Attack', skill: 'hwp', attackType: 'melee' }).facts.includes('target:condition:ep-hexed'));
+
+    hex.updateSource({ disabled: true });
+    assert.equal(await swing(), 'none', 'disabled');
+    hex.updateSource({ disabled: false });
+    assert.equal(await swing(), 'advantage');
+    hex.isSuppressed = true;
+    assert.equal(await swing(), 'none', 'suppressed');
+});
+
 test('a `when` that asks about the senses range has the distance measured, also from a rule on the target', async () => {
     reset();
     const previousCanvas = globalThis.canvas;
