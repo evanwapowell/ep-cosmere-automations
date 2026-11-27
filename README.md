@@ -60,5 +60,7 @@ await api.endStance(actor);
 `npm test` (or `node --test`) runs the tests: the pure logic, plus a smoke test of the Foundry glue against a small
 fake Foundry. Release with `tools/release.sh <version>` (bumps, tags, pushes), or Actions → Release → Run workflow
 with a branch and a version; the Release workflow tests, builds `module.zip` and publishes the GitHub release.
+Releases are cut from `main` only: the script refuses to run anywhere else, and the workflow refuses any commit that is
+not on `main`.
 
 Unofficial fan project; not affiliated with Brotherwise Games, Dragonsteel or The Metalworks.

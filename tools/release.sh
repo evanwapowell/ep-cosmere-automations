@@ -4,7 +4,7 @@
 #
 #   tools/release.sh 0.3.1
 #
-# Needs: node and git. Run from a clean checkout of the branch you release from.
+# Needs: node and git. Run from a clean checkout of main, up to date with origin/main: releases are cut from main only.
 set -euo pipefail
 
 version="${1:-}"
@@ -16,6 +16,16 @@ fi
 cd "$(git rev-parse --show-toplevel)"
 if [[ -n "$(git status --porcelain)" ]]; then
     echo "working tree is not clean" >&2
+    exit 1
+fi
+
+git fetch --quiet origin main
+if [[ "$(git branch --show-current)" != "main" ]]; then
+    echo "refusing to release from '$(git branch --show-current)': releases are cut from main only" >&2
+    exit 1
+fi
+if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+    echo "refusing to release: HEAD is not origin/main; update main first (git pull --ff-only origin main)" >&2
     exit 1
 fi
 
