@@ -2,12 +2,14 @@
  * Where an effect's rules come from: the one place that reads the rules tables.
  *
  * The effect's own rules (`flags[MODULE_ID].rules`) win per field; a field it doesn't set takes the default of the
- * table entry for the effect's single status (data/conditions.js) or its `situational` flag (data/situational.js).
+ * table entry for the effect's single status (data/conditions.js), its `situational` flag (data/situational.js),
+ * or, for the stance marker (scripts/stances.js), the situational entry for the marker's stance.
  * See "Defaults and overrides" in DESIGN.md. Identity (names, summaries, value type, `stackable`, `phase`) is not
  * rules and stays on the tables.
  */
 import { CONDITIONS_BY_ID } from '../data/conditions.js';
 import { SITUATIONAL_BY_ID } from '../data/situational.js';
+import { stanceEntry } from './logic/rolls.js';
 import { FLAGS, MODULE_ID } from './constants.js';
 import { hasRules, resolveRules } from './logic/rules.js';
 import { conditionIdOf } from './logic/table.js';
@@ -39,16 +41,23 @@ function warnOnce(effect, own, problems) {
  * An effect with its resolved rules.
  * @param {ActiveEffect} effect
  * @returns {{effect: ActiveEffect, rules: object, conditionId: string | null, situationalId: string | null,
- *   stacks: number | undefined, value: object | null}}
+ *   stanceId: string | null, stacks: number | undefined, value: object | null}}
  *   rules: normalized (see scripts/logic/rules.js), read-only; `{schema: 1}` when it has none;
  *   conditionId: the table condition its single status names; situationalId: the table entry its flag names;
- *   stacks: `system.stacks`; value: its `value` flag
+ *   stanceId: for the stance marker, the stance talent's system id (its defaults: the situational entry with that
+ *   `stance`, if any); stacks: `system.stacks`; value: its `value` flag
  */
 export function describeEffect(effect) {
     const conditionId = conditionIdOf(effect?.statuses, CONDITIONS_BY_ID);
     const flagged = effect?.getFlag?.(MODULE_ID, FLAGS.SITUATIONAL);
     const situationalId = flagged && SITUATIONAL_BY_ID[flagged] ? flagged : null;
-    const entry = conditionId ? CONDITIONS_BY_ID[conditionId] : situationalId ? SITUATIONAL_BY_ID[situationalId] : null;
+    const marker = conditionId || situationalId ? null : effect?.getFlag?.(MODULE_ID, FLAGS.STANCE_MARKER);
+    const stanceId = typeof marker === 'string' && marker ? marker : null;
+    const entry = conditionId
+        ? CONDITIONS_BY_ID[conditionId]
+        : situationalId
+          ? SITUATIONAL_BY_ID[situationalId]
+          : stanceEntry(stanceId, SITUATIONAL_BY_ID);
     const own = effect?.getFlag?.(MODULE_ID, FLAGS.RULES);
     const { rules, problems } = resolveRules(own, entry, KNOWN);
     if (effect) warnOnce(effect, own, problems);
@@ -57,6 +66,7 @@ export function describeEffect(effect) {
         rules,
         conditionId,
         situationalId,
+        stanceId,
         stacks: effect?.system?.stacks,
         value: effect?.getFlag?.(MODULE_ID, FLAGS.VALUE) ?? null,
     };

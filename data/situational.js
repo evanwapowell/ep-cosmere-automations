@@ -9,7 +9,8 @@
  * - summary   the rule, our words
  * - img       icon (Foundry core icons; the used action's icon wins when there is one)
  * - action    the system id of the action that creates it (`item.system.id`)
- * - stance    instead of an effect: applies while the actor is in this stance (system id of the stance talent)
+ * - stance    instead of an action: the default rules of the stance marker effect for this stance (system id of the
+ *             stance talent, scripts/stances.js), or of the stance itself while the actor has no marker
  * - needsTarget  the action needs exactly one target, stored in the effect's value
  * - needsSuccess the effect is only created when the player confirms the test succeeded (chat button)
  * - rolls     roll rules (see data/conditions.js)

@@ -3,12 +3,25 @@ import assert from 'node:assert/strict';
 
 import { CONDITIONS, CONDITIONS_BY_ID } from '../data/conditions.js';
 import { SITUATIONAL, SITUATIONAL_BY_ID } from '../data/situational.js';
-import { attackTypeOf, beyondSenses, collectModifiers, describeModifiers, netMode, ruleError, ruleMatchesTest } from '../scripts/logic/rolls.js';
+import { attackTypeOf, beyondSenses, collectModifiers, describeModifiers, netMode, ruleError, ruleMatchesTest, rollSources, sideSources, skillPenaltyFormula, stanceSource } from '../scripts/logic/rolls.js';
+import { defaultRules } from '../scripts/logic/rules.js';
 import { validateSituational } from '../scripts/logic/table.js';
 
 const full = () => 'full';
-const sources = { conditions: CONDITIONS_BY_ID, situational: SITUATIONAL_BY_ID, modeOf: full };
-const side = (over = {}) => ({ uuid: 'Actor.a', name: 'A', conditions: [], situational: [], stance: null, ...over });
+const sources = { modeOf: full };
+const TABLES = { conditions: CONDITIONS_BY_ID, situational: SITUATIONAL_BY_ID };
+/**
+ * A side as `sideOf` builds it, from condition ids, situational effects and a stance, each with the table's
+ * rules (what effects with no rules of their own resolve to).
+ */
+const side = ({ uuid = 'Actor.a', name = 'A', conditions = [], situational = [], effects = [], stance = null } = {}) => {
+    const rows = [
+        ...conditions.map((id, i) => ({ effect: { id: `c${i}`, name: id }, rules: defaultRules(CONDITIONS_BY_ID[id]), conditionId: id })),
+        ...situational.map(({ id, effectId, value }) => ({ effect: { id: effectId, name: id }, rules: defaultRules(SITUATIONAL_BY_ID[id]), situationalId: id, value })),
+        ...effects,
+    ];
+    return { uuid, name, sources: sideSources(rows, { stance, ...TABLES }) };
+};
 const skill = (id) => ({ context: 'Skill', skill: id, attackType: null });
 const melee = { context: 'Attack', skill: 'hwp', attackType: 'melee' };
 const ranged = { context: 'Attack', skill: 'lwp', attackType: 'ranged' };
@@ -147,4 +160,112 @@ test('describeModifiers', () => {
     ];
     assert.equal(describeModifiers(mods), 'Advantage: target Prone. Disadvantage: Restrained.');
     assert.equal(describeModifiers([]), '');
+});
+
+/* --- Rules on any effect (step 4 of portable rules) --- */
+
+const plain = (id, name, rolls, extra = {}) => ({ effect: { id, name }, rules: { schema: 1, rolls }, ...extra });
+
+test('a plain effect with its own roll rule: disadvantage on ranged attacks, not on melee; labelled with its name', () => {
+    const roller = side({ effects: [plain('E1', 'Shaky Hands', [{ who: 'self', mode: 'disadvantage', tests: 'ranged' }])] });
+    const mods = collectModifiers({ roller, target: null, test: ranged }, sources);
+    assert.deepEqual(keys(mods), ['self:effect:E1:disadvantage']);
+    assert.equal(mods[0].label, 'Shaky Hands');
+    assert.equal(netMode('none', mods), 'disadvantage');
+    assert.deepEqual(collectModifiers({ roller, target: null, test: melee }, sources), []);
+});
+
+test('a plain effect on the target: who "target" rules apply to tests against it', () => {
+    const target = side({ uuid: 'Actor.t', effects: [plain('E2', 'Smoke', [{ who: 'target', mode: 'disadvantage', tests: 'attack' }])] });
+    assert.deepEqual(keys(collectModifiers({ roller: side(), target, test: melee }, sources)), ['target:effect:E2:disadvantage']);
+    assert.deepEqual(collectModifiers({ roller: side(), target, test: skill('ath') }, sources), []);
+});
+
+test('consume and vsTarget work on any effect', () => {
+    const roller = side({
+        effects: [
+            plain('E3', 'Lucky Charm', [{ who: 'self', mode: 'advantage', tests: 'all', consume: true }]),
+            plain('E4', 'Marked Prey', [{ who: 'self', mode: 'advantage', tests: 'attack', vsTarget: true }], { value: { targetUuid: 'Actor.t', targetName: 'Brute' } }),
+        ],
+    });
+    const brute = side({ uuid: 'Actor.t' });
+    const mods = collectModifiers({ roller, target: brute, test: melee }, sources);
+    assert.deepEqual(keys(mods), ['self:effect:E3:advantage', 'self:effect:E4:advantage']);
+    assert.deepEqual(mods.find((m) => m.key === 'effect:E3').consume, { actorUuid: 'Actor.a', effectId: 'E3' });
+    assert.equal(mods.find((m) => m.key === 'effect:E4').label, 'Marked Prey (Brute)');
+    assert.equal(mods.find((m) => m.key === 'effect:E4').consume, undefined);
+    assert.deepEqual(keys(collectModifiers({ roller, target: side({ uuid: 'Actor.o' }), test: melee }, sources)), ['self:effect:E3:advantage']);
+});
+
+test('a condition with its own consume rule is used up like any effect', () => {
+    const rows = [{ effect: { id: 'cond1', name: 'Empowered' }, conditionId: 'empowered', rules: { schema: 1, rolls: [{ who: 'self', mode: 'advantage', tests: 'all', consume: true }] } }];
+    const mods = collectModifiers({ roller: { uuid: 'Actor.a', name: 'A', sources: rollSources(rows, TABLES) }, target: null, test: skill('ath') }, sources);
+    assert.deepEqual(mods.map((m) => [m.key, m.label, m.consume?.effectId]), [['empowered', 'Empowered', 'cond1']]);
+});
+
+test('two plain effects each count; two instances of a condition count once', () => {
+    const rule = [{ who: 'self', mode: 'disadvantage', tests: 'all' }];
+    const roller = side({ conditions: ['restrained', 'restrained'], effects: [plain('E5', 'Ache', rule), plain('E6', 'Ache', rule)] });
+    assert.deepEqual(keys(collectModifiers({ roller, target: null, test: skill('ath') }, sources)), [
+        'self:effect:E5:disadvantage',
+        'self:effect:E6:disadvantage',
+        'self:restrained:disadvantage',
+    ]);
+});
+
+test('modeOf gets the source key: a plain effect can be off or remind on its own', () => {
+    const roller = side({ conditions: ['restrained'], effects: [plain('E7', 'Hex', [{ who: 'self', mode: 'disadvantage', tests: 'all' }])] });
+    const modeOf = (key) => (key.startsWith('effect:') ? 'remind' : 'full');
+    const mods = collectModifiers({ roller, target: null, test: skill('ath') }, { modeOf });
+    assert.deepEqual(mods.map((m) => [m.key, m.active]).sort(), [['effect:E7', false], ['restrained', true]]);
+    assert.deepEqual(collectModifiers({ roller, target: null, test: skill('ath') }, { modeOf: (k) => (k.startsWith('effect:') ? 'off' : 'full') }).length, 1);
+});
+
+test('the stance marker resolves to its stance; it wins over the table-only stance source', () => {
+    const marker = (rules) => ({ effect: { id: 'M1', name: 'Stance: Flamestance' }, stanceId: 'flamestance', rules });
+    const fromTable = defaultRules(SITUATIONAL_BY_ID.flamestance);
+    const withMarker = side({ effects: [marker(fromTable)], stance: 'flamestance' });
+    const mods = collectModifiers({ roller: withMarker, target: null, test: skill('inm') }, sources);
+    assert.deepEqual(keys(mods), ['self:situational:flamestance:advantage'], 'counted once');
+    assert.equal(mods[0].label, 'Flamestance');
+
+    const own = side({ effects: [marker({ schema: 1, rolls: [] })], stance: 'flamestance' });
+    assert.deepEqual(collectModifiers({ roller: own, target: null, test: skill('inm') }, sources), [], 'the marker\'s own rules win');
+
+    const other = rollSources([{ effect: { id: 'M2', name: 'Stance: Stonestance' }, stanceId: 'stonestance', rules: { schema: 1, rolls: [{ who: 'target', mode: 'disadvantage', tests: 'melee' }] } }], TABLES);
+    assert.deepEqual(other.map((s) => [s.key, s.modeKey, s.label]), [['stance:stonestance', 'effect:M2', 'Stance: Stonestance']], 'a stance with no table entry is an effect like any other');
+    assert.equal(stanceSource('stonestance', SITUATIONAL_BY_ID), null);
+
+    const stale = side({ effects: [marker(fromTable)], stance: 'stonestance' });
+    assert.deepEqual(collectModifiers({ roller: stale, target: null, test: skill('inm') }, sources), [], 'a marker left from another stance');
+});
+
+test('rollSources leaves out effects without roll rules', () => {
+    const rows = [
+        { effect: { id: 'a' }, conditionId: 'slowed', rules: defaultRules(CONDITIONS_BY_ID.slowed) },
+        { effect: { id: 'b', name: 'Nothing' }, rules: { schema: 1 } },
+    ];
+    assert.deepEqual(rollSources(rows, TABLES), []);
+});
+
+test('an effect an item transfers counts, keyed by its uuid, but is never used up', () => {
+    const rule = [{ who: 'self', mode: 'advantage', tests: 'all', consume: true }];
+    const rows = [
+        { effect: { id: 'X1', uuid: 'Actor.a.Item.i1.ActiveEffect.X1', name: 'Charm' }, rules: { schema: 1, rolls: rule }, onActor: false },
+        { effect: { id: 'X1', uuid: 'Actor.a.Item.i2.ActiveEffect.X1', name: 'Charm' }, rules: { schema: 1, rolls: rule }, onActor: false },
+    ];
+    const list = rollSources(rows, TABLES);
+    assert.deepEqual(list.map((s) => [s.key, s.effectId]), [['Actor.a.Item.i1.ActiveEffect.X1', undefined], ['Actor.a.Item.i2.ActiveEffect.X1', undefined]]);
+    const mods = collectModifiers({ roller: { uuid: 'Actor.a', name: 'A', sources: list }, target: null, test: skill('ath') }, sources);
+    assert.equal(mods.length, 2, 'two items with a copy of the same effect: two sources');
+    assert.ok(mods.every((m) => !m.consume));
+});
+
+test('skillPenaltyFormula: a penalty is taken off, a bonus added, never "- -n"', () => {
+    assert.equal(skillPenaltyFormula(2), '0 - 2');
+    assert.equal(skillPenaltyFormula(-1), '0 + 1');
+    assert.equal(skillPenaltyFormula(0), null);
+    assert.equal(skillPenaltyFormula(-0), null);
+    assert.equal(skillPenaltyFormula(Number.NaN), null);
+    assert.equal(skillPenaltyFormula(undefined), null);
 });

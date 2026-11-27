@@ -133,7 +133,7 @@ export function registerSettings() {
         hint: t(
             'settings.rolls.hint',
             null,
-            "Full: conditions and situational effects (yours and your target's) set the test's advantage or disadvantage; the roll dialog starts with it selected, so the player can change it. Remind: the chat card lists them, the roll is unchanged. Each condition's own setting must also be full.",
+            "Full: conditions, situational effects, stances and effects with rules of their own (yours and your target's) set the test's advantage or disadvantage; the roll dialog starts with it selected, so the player can change it. Remind: the chat card lists them, the roll is unchanged. Each condition's own setting, and \"Rules on other effects\" for other effects, must also be full.",
         ),
         scope: 'world',
         config: true,
@@ -161,7 +161,7 @@ export function registerSettings() {
         hint: t(
             'settings.otherEffects.hint',
             null,
-            "Rules carried by effects that are not one of the module's conditions (a talent's, a stance's, an item's or a homebrew effect's). Full: their movement and skill changes apply. Remind: they change nothing. A condition's rules follow that condition's own setting.",
+            "Rules carried by effects that are not one of the module's conditions or situational effects (a talent's, a stance's, an item's or a homebrew effect's). Full: their movement and skill changes and their advantages and disadvantages apply. Remind: they change nothing (the chat card of a test still lists their advantages and disadvantages). A condition's rules follow that condition's own setting.",
         ),
         scope: 'world',
         config: true,

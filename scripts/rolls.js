@@ -1,6 +1,7 @@
 /**
- * Layer 3: the roll layer. Sets a test's advantage mode from conditions and situational effects (the roller's
- * and its single target's), notes why on the chat card, and uses up effects that a test consumes.
+ * Layer 3: the roll layer. Sets a test's advantage mode from the roll rules of every effect the roller and its
+ * single target have (conditions, situational effects, the stance marker, any effect with rules of its own; see
+ * scripts/rules.js), notes why on the chat card, and uses up effects that a test consumes.
  *
  * How it reaches the system's rolls (cosmere-rpg 3.1.2):
  * - `cosmere-rpg.pre<Skill|Item|Attack>Roll(roll, source, config)` fires for every d20 test before its dialog
@@ -15,11 +16,12 @@
 import { CONDITIONS_BY_ID } from '../data/conditions.js';
 import { SITUATIONAL_BY_ID } from '../data/situational.js';
 import { MODES, MODULE_ID, SYSTEM_ID } from './constants.js';
-import { activeConditions, skillPenalty } from './mechanics.js';
-import { attackTypeOf, beyondSenses, collectModifiers, describeModifiers, netMode } from './logic/rolls.js';
+import { skillPenalty } from './mechanics.js';
+import { attackTypeOf, beyondSenses, collectModifiers, describeModifiers, needsSensesRange, netMode, sideSources, skillPenaltyFormula } from './logic/rolls.js';
 import { consumeEffect } from './relay.js';
-import { conditionMode, featureMode, SETTINGS, weakerMode } from './settings.js';
-import { activateGrantButton, endOn, singleTarget, situationalEffects } from './situational.js';
+import { ruleEffects } from './rules.js';
+import { conditionMode, effectRulesMode, featureMode, SETTINGS, weakerMode } from './settings.js';
+import { activateGrantButton, endOn, singleTarget } from './situational.js';
 import { esc, safe, warn } from './util.js';
 
 const CONTEXTS = ['Skill', 'Item', 'Attack'];
@@ -53,23 +55,32 @@ function rollsMode() {
     return featureMode(SETTINGS.ROLLS);
 }
 
-/** Mode for one source of modifiers: the weaker of the roll layer's setting and the source's own. */
-function modeOf(key) {
+/**
+ * Mode for one source of modifiers (a source's `modeKey`, see `rollSources`): the weaker of the roll layer's
+ * setting and the source's own. Situational effects and stances follow the roll layer's setting alone; a condition
+ * also its own setting; any other effect also "Rules on other effects".
+ */
+export function modeOf(key) {
     const rolls = rollsMode();
     if (key.startsWith('situational:')) return rolls;
+    if (key.startsWith('effect:')) return weakerMode(rolls, effectRulesMode(null));
     return weakerMode(rolls, conditionMode(key));
 }
 
-/** What the roll layer needs to know about an actor. */
+/**
+ * What the roll layer needs to know about an actor: one source per effect with roll rules, and the actor's stance
+ * from the table when no marker effect carries it.
+ */
 export function sideOf(actor) {
     if (!actor) return null;
-    return {
-        uuid: actor.uuid,
-        name: actor.token?.name ?? actor.name,
-        conditions: activeConditions(actor).map(({ id, rules }) => ({ id, rules })),
-        situational: situationalEffects(actor).map(({ id, effectId, value, rules }) => ({ id, effectId, value, rules })),
+    // The same effects as the mechanics layer: the actor's own and those its items transfer (#4).
+    const rows = ruleEffects(actor, { includeEmpty: true, transferred: true }).map((row) => ({ ...row, onActor: row.effect.parent === actor }));
+    const sources = sideSources(rows, {
         stance: actor.getFlag?.(SYSTEM_ID, 'mode.stance') ?? null,
-    };
+        conditions: CONDITIONS_BY_ID,
+        situational: SITUATIONAL_BY_ID,
+    });
+    return { uuid: actor.uuid, name: actor.token?.name ?? actor.name, sources };
 }
 
 function actorOf(context, source, config) {
@@ -77,14 +88,19 @@ function actorOf(context, source, config) {
     return config?.actor ?? source?.actor ?? null;
 }
 
-function modifiersFor(actor, test) {
+/**
+ * The modifiers a test gets.
+ * @param {Actor} actor the roller
+ * @param {{context: string, skill?: string | null, attackType?: string | null}} test
+ * @param {{target?: Actor | null}} [options] target: the target to use (default: the user's single target, whose
+ *   distance is then measured for rules that need it)
+ */
+export function modifiersFor(actor, test, { target } = {}) {
     const roller = sideOf(actor);
-    const targetActor = singleTarget(actor);
-    if (roller?.conditions.some((c) => c.id === 'blind') && targetActor) test = { ...test, beyondSenses: targetBeyondSenses(actor) };
-    return collectModifiers(
-        { roller, target: sideOf(targetActor), test },
-        { conditions: CONDITIONS_BY_ID, situational: SITUATIONAL_BY_ID, modeOf },
-    );
+    const measured = target === undefined;
+    const targetActor = measured ? singleTarget(actor) : target;
+    if (measured && targetActor && needsSensesRange(roller)) test = { ...test, beyondSenses: targetBeyondSenses(actor) };
+    return collectModifiers({ roller, target: sideOf(targetActor), test }, { modeOf });
 }
 
 /** The roller's senses range in the scene's units (the system's derived value: override or derived, plus bonus). */
@@ -166,18 +182,19 @@ function onPreRoll(context, roll, source, config) {
     };
 }
 
-/* --- Exhausted on a test rolled with another attribute --- */
+/* --- Exhausted (and other skill modifiers) on a test rolled with another attribute --- */
 
 /**
- * The system builds a skill test's modifier from the skill's `mod.value` (which carries the Exhausted penalty),
- * except when the test uses another attribute: `actor.rollSkill(id, {attribute})` and an attribute changed in the
- * roll dialog both rebuild it from rank + attribute only, dropping every skill bonus. Exhausted is a penalty on
- * every skill test, so it is added back as its own term then (once per roll).
+ * The system builds a skill test's modifier from the skill's `mod.value` (which carries the engine's skill
+ * modifiers: the Exhausted penalty, and any effect's `skillModifier` rules), except when the test uses another
+ * attribute: `actor.rollSkill(id, {attribute})` and an attribute changed in the roll dialog both rebuild it from
+ * rank + attribute only, dropping every skill bonus. The engine's modifiers for that skill are added back as their
+ * own term then (once per roll). A bonus (an all-skills or listed-skill bonus in full mode) is added back too.
  */
 function onPreRollExhaustion(context, roll, source, config) {
     const actor = actorOf(context, source, config);
     if (!actor) return;
-    roll.options[MODULE_ID] = { ...roll.options[MODULE_ID], actorUuid: actor.uuid };
+    roll.options[MODULE_ID] = { ...roll.options[MODULE_ID], actorUuid: actor.uuid, skill: config?.data?.skill?.id ?? null };
     // rollSkill with an explicit attribute leaves the skill's bonus out from the start.
     if (context === 'Skill' && config?.attribute) addExhaustionTerm(roll, actor);
 }
@@ -185,9 +202,10 @@ function onPreRollExhaustion(context, roll, source, config) {
 function addExhaustionTerm(roll, actor) {
     const state = (roll.options[MODULE_ID] ??= {});
     if (state.exhaustion) return;
-    const penalty = skillPenalty(actor);
-    if (!penalty || !Array.isArray(roll.terms) || typeof Roll !== 'function') return;
-    roll.terms = roll.terms.concat(new Roll(`0 - ${penalty}`).terms.slice(1));
+    const penalty = skillPenalty(actor, state.skill ?? undefined);
+    const formula = skillPenaltyFormula(penalty);
+    if (!formula || !Array.isArray(roll.terms) || typeof Roll !== 'function') return;
+    roll.terms = roll.terms.concat(new Roll(formula).terms.slice(1));
     if (typeof roll.resetFormula === 'function') roll.resetFormula();
     state.exhaustion = penalty;
 }

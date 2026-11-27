@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import { CONDITIONS, CONDITIONS_BY_ID } from '../data/conditions.js';
 import { SITUATIONAL, SITUATIONAL_BY_ID } from '../data/situational.js';
 import { planAdjustments } from '../scripts/logic/mechanics.js';
-import { collectModifiers } from '../scripts/logic/rolls.js';
-import { defaultDuration, entryToRules, resolveRules } from '../scripts/logic/rules.js';
+import { collectModifiers, rollSources } from '../scripts/logic/rolls.js';
+import { defaultDuration, defaultRules, entryToRules, resolveRules } from '../scripts/logic/rules.js';
 
 const ROLL = { who: 'self', mode: 'disadvantage', tests: 'ranged' };
 const known = { conditions: CONDITIONS.map((c) => c.id) };
@@ -96,9 +96,19 @@ test("planAdjustments: an effect's resolved rules decide, not the table", () => 
 });
 
 test("collectModifiers: an effect's resolved rules decide, not the table", () => {
-    const sources = { conditions: CONDITIONS_BY_ID, situational: SITUATIONAL_BY_ID, modeOf: () => 'full' };
+    const sources = { modeOf: () => 'full' };
     const test_ = { context: 'Attack', attackType: 'ranged' };
-    const run = (conditions) => collectModifiers({ roller: { uuid: 'a', name: 'A', conditions }, target: null, test: test_ }, sources);
+    // A condition id alone: the table's rules (an effect with none of its own); {id, rules}: resolved rules.
+    const rows = (conditions) =>
+        conditions.map((item, i) => {
+            const id = typeof item === 'string' ? item : item.id;
+            return { effect: { id: `e${i}` }, conditionId: id, rules: typeof item === 'string' ? defaultRules(CONDITIONS_BY_ID[id]) : item.rules };
+        });
+    const run = (conditions) =>
+        collectModifiers(
+            { roller: { uuid: 'a', name: 'A', sources: rollSources(rows(conditions), { conditions: CONDITIONS_BY_ID, situational: SITUATIONAL_BY_ID }) }, target: null, test: test_ },
+            sources,
+        );
 
     assert.deepEqual(run(['prone']).map((m) => m.key), [], 'Prone has no roll rule for the roller');
     const rules = resolveRules({ rolls: [ROLL] }, CONDITIONS_BY_ID.prone).rules;

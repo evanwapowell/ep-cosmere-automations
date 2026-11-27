@@ -676,8 +676,8 @@ conditions) and `describeEffect(effect)`. Every layer now reads rules through it
 `planAdjustments`, the roll layer's `sideOf` and `collectModifiers`, a condition's `links` and default duration,
 the long-rest step, a situational effect's `endsWhen`, and the relay's `consume`. Pure functions take an effect's
 resolved `rules` when given and otherwise convert the table entry, so their old signatures still work. The tables
-are still read directly for identity, by the validators, and for a stance's roll rules (a stance is not an
-effect; #5 folds it in). Layers still understand only what the tables could say, so an effect's own rules can
+are still read directly for identity and by the validators (a stance's roll rules were read from the table too,
+until #5 folded them into the stance marker). Layers still understand only what the tables could say, so an effect's own rules can
 already change which table behaviour applies. The following steps (#4 to #6) widen each layer.
 
 **Step 3 (#4) widened the mechanics layer** ("Mechanics from any effect", below).
@@ -697,6 +697,40 @@ can't see. A link the engine creates carries the chain of links being followed i
 would make two effects hold each other) and stops a chain at `MAX_LINK_DEPTH` (6, the effect that started it
 included; the table's own chains are three deep). Either stop warns once, in the console and as a notification.
 Links still name table conditions only.
+
+**Step 4 (#5): the roll layer reads rules from any effect.** A side of a test is `{ uuid, name, sources }`, one
+source per effect of the actor's `ruleEffects` that has roll rules (`rollSources` and `sideSources`, pure, in
+`scripts/logic/rolls.js`); `collectModifiers` walks the sources and no longer takes the tables.
+
+- **A source** is `{ key, modeKey, label, rules, effectId, value }`. `key` is what counts once: the condition id
+  for a condition (several instances of one condition still count once), otherwise the effect (a stance:
+  `stance:<talent id>`). `modeKey` is the modifier's key, which the mode reads and `api.modifiers` returns: the
+  condition id, `situational:<id>` for Dodging, Bracing, Advantage gained and a stance with a table entry, and
+  `effect:<effect id>` for any other effect. `label` is the table's name for the tables' entries and the effect's
+  own name for any other effect ("Disadvantage: Shaky Hands.").
+- **`vsTarget`, `consume` and `beyondSenses` work on any effect's rules**, exactly as before: `vsTarget` compares
+  the effect's `value.targetUuid` with the roller's target, `consume` ends that effect after the test (through the
+  GM relay, which accepts any effect whose resolved rules have a `consume` rule), and the distance to the target is
+  measured when any of the roller's rules has `beyondSenses` (before: only for Blind). The condition table still
+  refuses `consume` and `vsTarget`; rules on effects allow them.
+- **Stances:** the stance marker effect (`scripts/stances.js`, flag `stanceMarker` = the talent's system id)
+  resolves its defaults from the situational entry with that `stance` (Flamestance), so a marker can carry rules of
+  its own that replace them. A marker counts only for the stance the actor is in. When the actor is in a stance
+  with no marker (stances not in full mode, or the stance set by something else), the table's stance rules still
+  apply, as before.
+- **Which effects count** is #4's decision: the actor's own and those its items transfer (`ruleEffects(actor,
+  { transferred: true })`), so a talent's or stance talent's effect with roll rules counts (only while enabled: the
+  system disables the effects of a stance the actor is not in). An effect an item transfers is never used up by
+  `consume` (it lives on the item); its source has no `effectId`. Sources are keyed by the effect's uuid, so two
+  items carrying a copy of the same effect count twice.
+- **Modes:** a condition follows the weaker of "Advantage and disadvantage on tests" and its own setting (as
+  before); situational effects and stances follow the roll setting (as before); any other effect follows the
+  weaker of the roll setting and **"Rules on other effects"** (#4's setting, through `effectRulesMode`).
+- `api.modifiers(actor, …)` goes through the same `modifiersFor` as the roll hooks and returns the same shape.
+- **A test rolled with another attribute** (the system then leaves the skill's `mod.bonus` out) gets the engine's
+  modifiers for *that* skill added back as a term: `skillPenalty(actor, skill)`, with the skill id from the
+  roll's config, so listed-skill modifiers count too. A bonus is added back as `+ n` (`skillPenaltyFormula`), never
+  as `- -n`.
 
 ### The shape
 
@@ -854,8 +888,8 @@ effects are one source) and any other effect by its uuid.
 | `attributeBonus`, `from: 'value'` | Not by the derived step. The value path (`onPreCreate` and `valueEffectData`) writes it as a real effect change when the condition is created with a value (Enhanced), as before; counting it again would apply it twice. Its record is what tells the value path to write it, so step 7 can show it. |
 
 `skillPenalty(actor)`, which the roll layer adds back when a test leaves the skill's bonus out, reads the same
-plan; `skillPenalty(actor, skill)` also counts the modifiers listed for that skill (the roll layer does not pass
-the skill yet). With an all-skills bonus in full mode it can be negative.
+plan; `skillPenalty(actor, skill)` also counts the modifiers listed for that skill (the roll layer passes the
+test's skill since #5). With a bonus in full mode it can be negative; the roll layer then adds `+ n`.
 
 Not yet verified in Foundry: the live check is part of step 8 (#9).
 

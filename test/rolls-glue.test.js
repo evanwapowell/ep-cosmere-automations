@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { FakeActor, flush, Hooks, installFakeFoundry, rollAttack, rollSkill } from './fake-foundry.js';
+import { FakeActor, FakeEffect, FakeItem, flush, Hooks, installFakeFoundry, rollAttack, rollSkill } from './fake-foundry.js';
 
 const CONDITION_IDS = [
     'afflicted', 'enhanced', 'exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'unconscious', 'stunned',
@@ -17,6 +17,7 @@ const env = installFakeFoundry({
         stances: 'full',
         rolls: 'full',
         actionEffects: 'full',
+        otherEffects: 'full',
     },
 });
 await import('../scripts/main.js');
@@ -423,4 +424,128 @@ test('api.modifiers previews a test', async () => {
     const preview = api.modifiers(kal, { target: brute, context: 'Attack', attackType: 'ranged' });
     assert.equal(preview.mode, 'none');
     assert.deepEqual(preview.modifiers.map((m) => m.key).sort(), ['empowered', 'flying']);
+});
+
+/* --- Rules on any effect (step 4 of portable rules) --- */
+
+const MODULE = 'ep-cosmere-automations';
+const ruleEffect = async (actor, name, rolls) => {
+    const [effect] = await actor.createEmbeddedDocuments('ActiveEffect', [{ name, flags: { [MODULE]: { rules: { rolls } } } }]);
+    await flush();
+    return effect;
+};
+
+test('a plain effect with its own roll rule: disadvantage on ranged attacks, not on melee', async () => {
+    reset();
+    const kal = new FakeActor({ name: 'Kal' });
+    const brute = new FakeActor({ name: 'Brute' });
+    await ruleEffect(kal, 'Shaky Hands', [{ who: 'self', mode: 'disadvantage', tests: 'ranged' }]);
+    target(brute);
+    const shot = await rollAttack(kal, bow(kal), { fastForward: true });
+    assert.equal(shot.options.advantageMode, 'disadvantage');
+    assert.equal(shot.options[MODULE].note, 'Disadvantage: Shaky Hands.', 'the effect\'s name on the card');
+    const swing = await rollAttack(kal, sword(kal), { fastForward: true });
+    assert.equal(swing.options.advantageMode, 'none');
+
+    const preview = api.modifiers(kal, { target: brute, context: 'Attack', attackType: 'ranged' });
+    assert.equal(preview.mode, 'disadvantage');
+    assert.deepEqual(preview.modifiers.map((m) => m.label), ['Shaky Hands']);
+});
+
+test('"Rules on other effects" in remind mode: the card lists them, the roll is unchanged; conditions still apply', async () => {
+    reset();
+    env.settings.set('otherEffects', 'remind');
+    try {
+        const kal = new FakeActor({ name: 'Kal' });
+        await ruleEffect(kal, 'Hex', [{ who: 'self', mode: 'disadvantage', tests: 'all' }]);
+        const roll = await rollSkill(kal, 'ath', { fastForward: true });
+        assert.equal(roll.options.advantageMode, 'none');
+        assert.equal(roll.options[MODULE].note, 'Not applied (remind only): Hex (disadvantage).');
+        await api.apply(kal, 'empowered');
+        await flush();
+        assert.equal((await rollSkill(kal, 'ath', { fastForward: true })).options.advantageMode, 'advantage');
+    } finally {
+        env.settings.set('otherEffects', 'full');
+    }
+});
+
+test('a consumed rule on a custom effect ends that effect after the test', async () => {
+    reset();
+    const kal = new FakeActor({ name: 'Kal' });
+    const charm = await ruleEffect(kal, 'Lucky Charm', [{ who: 'self', mode: 'advantage', tests: 'all', consume: true }]);
+    assert.equal((await rollSkill(kal, 'ath', { fastForward: true })).options.advantageMode, 'advantage');
+    await flush();
+    assert.equal(kal.effects.has(charm.id), false, 'used up');
+    assert.equal((await rollSkill(kal, 'ath', { fastForward: true })).options.advantageMode, 'none');
+});
+
+test('Flamestance through the stance marker; the marker\'s own rules win over the table', async () => {
+    reset();
+    const flamestance = { id: 'T1', type: 'talent', name: 'Flamestance', img: 'flame.svg', system: { id: 'flamestance', modality: 'stance' } };
+    const kal = new FakeActor({ name: 'Kal', items: [flamestance] });
+    await kal.setMode('stance', 'flamestance');
+    await flush();
+    const marker = kal.effects.find((e) => e.getFlag(MODULE, 'stanceMarker') === 'flamestance');
+    assert.ok(marker, 'the marker is there');
+    const roll = await rollSkill(kal, 'inm', { fastForward: true });
+    assert.equal(roll.options.advantageMode, 'advantage');
+    assert.equal(roll.options[MODULE].note, 'Advantage: Flamestance.');
+    assert.equal((await rollSkill(kal, 'prs', { fastForward: true })).options.advantageMode, 'none');
+
+    await marker.setFlag(MODULE, 'rules', { rolls: [{ who: 'self', mode: 'advantage', tests: { skills: ['prs'] } }] });
+    assert.equal((await rollSkill(kal, 'inm', { fastForward: true })).options.advantageMode, 'none', 'own rules replace the default');
+    assert.equal((await rollSkill(kal, 'prs', { fastForward: true })).options.advantageMode, 'advantage');
+
+    await marker.setFlag(MODULE, 'rules', { rolls: [] });
+    assert.equal((await rollSkill(kal, 'inm', { fastForward: true })).options.advantageMode, 'none', 'none of its own: no fallback to the table');
+});
+
+test('a custom effect on the target: attacks against it gain a disadvantage', async () => {
+    reset();
+    const kal = new FakeActor({ name: 'Kal' });
+    const brute = new FakeActor({ name: 'Brute', type: 'adversary', hasPlayerOwner: false });
+    await ruleEffect(brute, 'Smoke Cloud', [{ who: 'target', mode: 'disadvantage', tests: 'attack' }]);
+    target(brute);
+    const roll = await rollAttack(kal, sword(kal), { fastForward: true });
+    assert.equal(roll.options.advantageMode, 'disadvantage');
+    assert.equal(roll.options[MODULE].note, 'Disadvantage: target Smoke Cloud.');
+});
+
+test('another attribute: the engine\'s modifiers for that skill are added back, a bonus as "+ n"', async () => {
+    reset();
+    const penalty = (roll) => roll.terms.slice(3).map((t) => t.operator ?? t.number).join(' ');
+    const kal = new FakeActor({ name: 'Kal' });
+    const [effect] = await kal.createEmbeddedDocuments('ActiveEffect', [
+        { name: 'Drilled', flags: { [MODULE]: { rules: { mechanics: [{ kind: 'skillModifier', amount: 1, skills: ['ath'] }] } } } },
+    ]);
+    await flush();
+    assert.equal(penalty(await rollSkill(kal, 'ath', { fastForward: true, attribute: 'int' })), '+ 1', 'a listed-skill bonus');
+    assert.equal(penalty(await rollSkill(kal, 'agi', { fastForward: true, attribute: 'int' })), '', 'not for another skill');
+
+    await api.apply(kal, 'exhausted', { stacks: 2 });
+    await flush();
+    assert.equal(penalty(await rollSkill(kal, 'ath', { fastForward: true, attribute: 'int' })), '- 1', 'Exhausted 2 and the +1 together');
+    assert.equal(penalty(await rollSkill(kal, 'agi', { fastForward: true, attribute: 'int' })), '- 2');
+
+    await effect.setFlag(MODULE, 'rules', { mechanics: [{ kind: 'skillModifier', amount: 3, skills: 'all' }] });
+    assert.equal(penalty(await rollSkill(kal, 'agi', { fastForward: true, attribute: 'int' })), '+ 1', 'an all-skills bonus over the penalty');
+});
+
+test('a talent\'s transferred effect with roll rules counts (as in the mechanics layer); disabled, it does not; never used up', async () => {
+    reset();
+    const talent = new FakeItem({ id: 'talent0000000009', name: 'Keen Eye', type: 'talent' });
+    const kal = new FakeActor({ name: 'Kal', items: [talent] });
+    const effect = new FakeEffect(
+        { _id: 'talenteffect0001', name: 'Keen Eye', flags: { [MODULE]: { rules: { rolls: [{ who: 'self', mode: 'advantage', tests: { skills: ['per'] }, consume: true }] } } } },
+        talent,
+    );
+    talent.effects.set(effect.id, effect);
+    const roll = await rollSkill(kal, 'per', { fastForward: true });
+    assert.equal(roll.options.advantageMode, 'advantage');
+    assert.equal(roll.options[MODULE].note, 'Advantage: Keen Eye.');
+    assert.deepEqual(roll.options[MODULE].consume, [], 'an item\'s effect is not the actor\'s to use up');
+    assert.ok(talent.effects.has(effect.id));
+
+    effect.updateSource({ disabled: true });
+    assert.equal((await rollSkill(kal, 'per', { fastForward: true })).options.advantageMode, 'none');
 });

@@ -13,10 +13,9 @@ import { normalizeValue } from './logic/values.js';
 import { conditionMode } from './settings.js';
 import { endStance, syncStanceMarker } from './stances.js';
 import { createSituational, situationalEffects } from './situational.js';
-import { sideOf } from './rolls.js';
-import { collectModifiers, netMode } from './logic/rolls.js';
-import { SITUATIONAL, SITUATIONAL_BY_ID } from '../data/situational.js';
-import { SETTINGS, featureMode, weakerMode } from './settings.js';
+import { modifiersFor } from './rolls.js';
+import { netMode } from './logic/rolls.js';
+import { SITUATIONAL } from '../data/situational.js';
 import { systemChoices } from './util.js';
 
 /** Changes the API makes for the caller pass the "held by a source" guard (see conditions.js). */
@@ -223,12 +222,7 @@ function marks(actor) {
  * @param {{target?: Actor, context?: 'Skill' | 'Item' | 'Attack', skill?: string, attackType?: 'melee' | 'ranged', base?: string}} [test]
  */
 function modifiers(actor, { target = null, context = 'Skill', skill = null, attackType = null, base = 'none' } = {}) {
-    const rolls = featureMode(SETTINGS.ROLLS);
-    const modeOf = (key) => (key.startsWith('situational:') ? rolls : weakerMode(rolls, conditionMode(key)));
-    const mods = collectModifiers(
-        { roller: sideOf(actor), target: sideOf(target), test: { context, skill, attackType } },
-        { conditions: CONDITIONS_BY_ID, situational: SITUATIONAL_BY_ID, modeOf },
-    );
+    const mods = modifiersFor(actor, { context, skill, attackType }, { target: target ?? null });
     return { modifiers: mods, mode: netMode(base, mods) };
 }
 
