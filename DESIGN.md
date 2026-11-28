@@ -16,7 +16,8 @@ conditions.
   Stormlight Handbook data, Advanced Encounters, Automated Actions): 19 of 21 checks pass on v0.3.1 after six
   fixes; two need a second login. See "Live pass results" below and the "Phase 1/2/3 as built" sections.
   0.3.2 and 0.3.3 added the rules in "After the live pass" and "Held conditions"; 0.3.4 moved the long-rest step
-  into the table.
+  into the table. 0.4.0 moved the rules onto effects ("Rules on effects"), with the tables as defaults; its live pass
+  (2026-11-27) found one fault, fixed in 0.4.1. See "Live pass results (2026-11-27)".
 
 ## Ground rules
 
@@ -185,39 +186,63 @@ From the system 3.1.2 source:
 - Advanced Encounters already removes actions and reactions for Stunned, Surprised and Disoriented at turn start. The
   engine leaves that to it.
 
-### Design: one table, five layers
+### Design: rules on effects, tables as defaults, one resolver
 
-1. **The condition table** (`data/conditions.js`, plain data). One entry per condition or
-   situational effect: rule summary and source page, value type (none, number, damage type + amount, attribute + amount),
-   stacking, effect changes, roll modifiers, default duration, linked conditions, triggers. Adding a talent later means
-   adding an entry, not code. Being plain data also makes it something we could offer to the system later.
-2. **Static mechanics.** *(Changed while building phase 1; see "Phase 1 as built".)* Two kinds:
-   - *Derived adjustments*, for mechanics that depend on derived values or stacks (movement 0, half movement,
-     Exhausted): the engine wraps the actor's `prepareDerivedData` and, after the system's own derivation, adjusts
-     `movement.<type>.rate.bonus` and `skills.<id>.mod.bonus` for the conditions the actor has. Nothing is stored,
-     so there is nothing to refresh, settings take effect at once, and turning the module off undoes it.
-   - *Effect changes*, for mechanics that come from a value: Enhanced writes `system.attributes.<id>.bonus +X` on
-     its own effect when created (from the API, or after the value dialog).
-3. **Roll modifiers.** One roll handler collects advantages, disadvantages and penalties from the roller's and the
-   target's effects (target = the roller's current target), nets advantages against disadvantages one for one
-   (handbook ch. 9, "Advantages and Disadvantages"), sets the roll's mode and adds a line to the roll's flavor saying why. Hooks:
-   `cosmere-rpg.preAttackRollConfiguration` / `preSkillRollConfiguration` (pre-select the dialog buttons so the player
-   sees and can override them) and `cosmere-rpg.preAttackRoll` / `preSkillRoll` / `preItemRoll` for rolls without a
-   dialog (`roll.options.advantageMode = …; roll.configureModifiers()`).
-4. **Durations and expiry, with Cosmere's turn rules.** Foundry's built-in round/turn durations don't match Cosmere's
-   fast/slow phases, and with Advanced Encounters there's no "current turn" until a combatant is started. So the
-   engine stores its own duration in the effect's flags and checks it when Advanced Encounters starts or ends a turn and
-   on the system's `combatRoundStart`. Duration kinds, all from the handbook (ch. 9, "Durations"):
-   - *until the start of the same phase next round* (the default for round-based effects in combat);
-   - *until the end of your next turn*; *after your next turn* (Surprised);
-   - *end of scene* (combat end, or a GM "new scene" button);
-   - *until a long rest* (system `rest` hook), *N days* (injuries; GM advances days);
-   - *until used* (Determined, Dodge's mark); *until you move or attack* (Brace); *until removed* (default).
-5. **Links, sources, values and the apply dialog.** When a condition is created from any path (`createActiveEffect`
-   hook, on the GM's client), the engine adds linked conditions with a "from Prone" source, and, if the condition needs
-   a value or the GM wants a duration, opens a small dialog (Afflicted: type and amount; Enhanced: attribute and amount;
-   Exhausted: stacks; duration kind). When a parent ends, children it alone applied end too. A chat line says what
-   started and ended ("Kal is Stunned until the start of the fast-PC phase next round"; GM-only option for NPCs).
+*(Rewritten for 0.4.0. Until then the rules were looked up in the tables by status id; see "Rules on effects" for
+the steps that changed it.)*
+
+**Rules live on effects.** Every Active Effect can carry its own rules in `flags['ep-cosmere-automations'].rules`
+(the shape is under "Rules on effects (schema 1)"): number changes (`mechanics`), advantage and disadvantage
+(`rolls`, with `when` over the facts of a test), conditions it brings (`links`), what a long rest takes (`longRest`),
+what ends it (`endsWhen`) and its default `duration`. A talent, an item, a stance or a homebrew effect can say "half
+movement" or "advantage on Athletics while the target is Prone" as data, without a change to this module's code.
+
+**The tables are defaults.** `data/conditions.js` (the 22 statuses) and `data/situational.js` (Dodging, Bracing,
+Advantage gained, stances) still hold a rule summary and source page, the identity of each entry (value type,
+stacking, icon, the action that creates it) and its default rules. An effect whose single status is a table
+condition, or whose `situational` flag names an entry, gets that entry's rules as defaults; any other effect has
+none. Being plain data, the tables are still something we could offer to the system later.
+
+**One resolver.** `rulesOf(effect)` (`scripts/rules.js`, over the pure `resolveRules` in `scripts/logic/rules.js`)
+merges the effect's own rules over its defaults, field by field: a field the effect sets replaces the default as a
+whole, a field it leaves out keeps it, and an effect whose own rules are invalid counts as having none. Rules are
+resolved when they are read, on every data preparation and every test, never copied onto effects, so a world with
+conditions applied by an older version needs no migration and a fix to a table reaches effects already on actors.
+Every layer reads rules through it and none looks a status up in the tables for rules any more.
+
+**Which effects count.** `ruleEffects(actor)`: the actor's own enabled, unsuppressed effects with any rules. The
+mechanics and roll layers also read the effects the actor's items transfer to it (`{ transferred: true }`: a talent's,
+an item's, a stance talent's), so a stance talent's effect applies only while the system keeps it enabled, that is
+while the actor is in that stance. The layers that delete or update effects (`endsWhen`, links, long rest, `consume`)
+act only on the actor's own effects, never on an item's.
+
+**Modes.** A table condition follows its own setting (full, remind only, off), own rules included. Situational
+effects and stances follow their feature's setting. Every other effect follows **"Rules on other effects"**
+(`effectRulesMode` in `scripts/settings.js`) for its mechanics, its links (since 0.4.1) and, as the weaker of that
+and "Advantage and disadvantage on tests", its roll rules; its long-rest step follows the durations setting. Remind
+only changes nothing: the card of a test lists the roll rules not applied, and a chat line names the links not made.
+
+**The layers**, each reading resolved rules:
+
+1. **Mechanics** (`scripts/mechanics.js`, "Mechanics from any effect"). Movement, skill modifiers and fixed attribute
+   bonuses are computed in the actor's data preparation, after the system's own derivation (fixed attribute bonuses
+   right after `applyActiveEffects`, so skills and movement see them). Nothing is stored, so settings take effect at
+   once and turning the module off undoes it. Enhanced's attribute bonus from its value is the one mechanic written
+   as a real effect change, when it is created.
+2. **Rolls** (`scripts/rolls.js`, "Phase 3 as built", "Predicates on roll rules"). One handler collects the
+   roll rules of both sides of a test (the roller and its current target), nets advantages against disadvantages one
+   for one (handbook ch. 9), pre-selects the roll dialog so the player can change it, and adds a line to the card
+   saying why. `vsTarget`, `consume` and `beyondSenses` work on any effect's rules.
+3. **Durations** (`scripts/durations.js`, "Phase 2 as built"). The engine keeps its own clock in the effect's flags and
+   checks it on Advanced Encounters' turn start and end, the system's round start, the end of a scene, a long rest
+   and advancing days, with Cosmere's fast/slow phases. A rule's `duration` is the default when an effect is created
+   without one; `endsWhen` ends it when its bearer moves or attacks.
+4. **Links, sources and values** (`scripts/conditions.js`, "Held conditions"). When any effect with `links` is
+   created, the engine adds the linked conditions with that effect as their source, and removes what that source
+   alone held when it goes; a held condition can't be removed by hand. A condition needing a value (Afflicted,
+   Enhanced) or a duration opens a small dialog. Chat lines say what started and ended.
+5. **Authoring** ("Authoring (step 7, #8)"). The GM edits an effect's own rules from a "Rules" entry on its sheet,
+   or another module does through `api.rules`, `api.setRules` and `api.validateRules`.
 
 Plus **triggers** for conditions that act at a moment: Afflicted damage at the end of the creature's turn (one
 `applyDamage` per instance, typed); Determined offers a button on a failed test's card; Surprised blocks a fast turn
@@ -234,7 +259,8 @@ condition can be trusted one at a time and switched off the day the system imple
 ### The condition table
 
 The 22 statuses the system defines, with the Stormlight rules summarized in our own words (handbook ch. 9–10).
-"Layer" refers to "Design: one table, five layers".
+"Layer" refers to "Design: rules on effects, tables as defaults, one resolver". The table gives the defaults; any
+effect can carry rules of its own that replace them.
 
 | Status | Rule (short) | How the engine does it | Already handled |
 | --- | --- | --- | --- |
@@ -685,12 +711,13 @@ already change which table behaviour applies. The following steps (#4 to #6) wid
 **Step 5 (#6) made links and the long-rest step work for any effect.** An effect that isn't a table condition
 (a talent's, an item's, a homebrew "Pinned" with `links: ['immobilized']`) brings its linked conditions when it is
 created and takes them away when it is deleted, with the effect (id and name) as the source. Such an effect has no
-setting of its own, so linking follows the engine's master switch only (a disabled effect brings nothing, and
-enabling one later brings nothing yet); a table condition still follows its own setting. A long rest takes `longRest`
+setting of its own, so linking followed the engine's master switch only (a disabled effect brings nothing, and
+enabling one later brings nothing yet); a table condition still follows its own setting. *(Since 0.4.1 such links
+follow "Rules on other effects": full brings them, remind only posts a line naming them, off does nothing. The live
+pass found them applied in remind-only mode; see "Live pass results (2026-11-27)".)* A long rest takes `longRest`
 stacks off any effect whose resolved rules have it, except stacks a source holds; an effect that doesn't stack has
 one, so one step ends it. A table condition follows its own setting for this; any other effect follows the
-durations setting (full ends it, remind says so, off leaves it) and is skipped while disabled. Both are interim,
-until "Rules on other effects" decides modes for effects that aren't conditions (#4, #5).
+durations setting (full ends it, remind says so, off leaves it) and is skipped while disabled; it still does.
 **Loops:** the table is checked for link cycles when it loads, but an effect's own rules can make one the table check
 can't see. A link the engine creates carries the chain of links being followed in the options of its creation
 (`engine.chain`); `planLinks` (`scripts/logic/sources.js`) skips a link whose condition is already in the chain (it
@@ -897,7 +924,8 @@ effects are one source) and any other effect by its uuid.
 plan; `skillPenalty(actor, skill)` also counts the modifiers listed for that skill (the roll layer passes the
 test's skill since #5). With a bonus in full mode it can be negative; the roll layer then adds `+ n`.
 
-Not yet verified in Foundry: the live check is part of step 8 (#9).
+Checked live on 0.4.0 (2026-11-27): a stance talent's own effect, every effect kind together, and the cost of
+resolving on every data preparation. See "Live pass results (2026-11-27)".
 
 ### Predicates on roll rules (step 6, #7)
 
@@ -1025,14 +1053,10 @@ so every rule stored before reads exactly as it did. A version of the module fro
   effect that isn't a table condition (`self:effect:<name>`), stacks.
 - **Reading the effect's value** in a fact (the gaining skill above).
 
-**Not yet verified in Foundry.** The facts come from data the roll layer already read before #7 (the roll's
-context, skill and attack type, each side's effects, the `mode.stance` flag, the measured distance), so no new
-system internals are involved, but only the unit tests and the fake Foundry have run this. To try live (rolls and
-"Rules on other effects" at full, on a `zz` scene): an effect with example 1 on `zz Kal`, the Brute Surprised and
-targeted → the attack dialog opens with Advantage, and without Surprised it doesn't; example 3 → Athletics opens
-with Disadvantage outside Stonestance and not in it; `api.modifiers(kal, { target: brute, context: 'Attack',
-attackType: 'melee' }).facts` lists what was seen; an effect whose `when` has a typo warns once in the console
-and changes nothing. The live check is part of step 8 (#9).
+**Checked live on 0.4.0 (2026-11-27):** example 1 gives an advantage only while the target is Surprised (the facts
+list `target:condition:surprised` and `test:attack`); example 3 gives a disadvantage on Athletics outside
+Stonestance and none in it, and none on Deception; a `when` with a typo (`test:atack`) is ignored with one console
+warning naming the unknown fact. See "Live pass results (2026-11-27)".
 
 ### Authoring (step 7, #8)
 
@@ -1058,8 +1082,8 @@ while invalid) and "Reset to defaults". A form editor is a later step.
 **Links on an existing effect.** Links are followed when an effect is created. Giving `links` to an effect that is
 already on an actor brings nothing now; the linked conditions come the next time the effect is applied.
 
-Not yet seen in a live world: the control on the real sheet, the dialog's rendering and Save button handling.
-The check is in docs/LIVE-PASS.md (checks 22–25).
+Checked live on 0.4.0 (2026-11-27), docs/LIVE-PASS.md checks 22–25, all pass except the player half of 22 (no
+player login). See "Live pass results (2026-11-27)".
 
 ### Left out of schema 1
 
@@ -1067,6 +1091,82 @@ Numbers added to a roll; conditions on mechanics (a `when` on a mechanic record)
 or for one movement type; links to effects that aren't table conditions; whose turns a default duration counts
 (`turnOf`, always the bearer's). Each can be added as described under "Versions". (Conditions on a roll rule
 beyond `tests`, `beyondSenses` and `vsTarget` were on this list until #7: see "Predicates on roll rules".)
+
+## Live pass results (2026-11-27)
+
+The live pass for portable rules (#9), on **v0.4.0** as installed from the release: Foundry 13.351, cosmere-rpg
+3.1.2, Stormlight Handbook 3.0.1, Cosmere Advanced Encounters 1.3.1 and Cosmere Automated Actions 1.3.1 active
+(its "Let conditions modify rolls" and "decrementExhaustion" off), in the Stonewalkers world with every condition
+of this module at full. One GM login (Claude GM), no player connected. Throwaway scene `zz live pass` (viewed, never
+activated) with `zz Kal` and `zz Shallan` (new characters, Speed 3) and `zz Brute` (the world guide's Guard), GM-only
+rolls. Afterwards the scene, the actors, their folder and all 65 test chat messages were deleted, and the module's
+settings and the roll mode were put back as they were. Checks were run from the GM's console through the API and the
+system's own `use()`, `rollSkill()` and `longRest()`, the sheet's action buttons and the effect sheet's menu, with
+clicks where the check is about the UI.
+
+**1. Regression: built-in conditions and situational effects behave as in v0.3.6.**
+
+| What | Result | Seen |
+| --- | --- | --- |
+| Prone → Slowed | pass | Status toggle: Slowed "from Prone", walking 30 → 15; removing Prone removes both. |
+| Unconscious → Prone → Slowed | pass | Movement 0; all three end with Unconscious. |
+| Exhausted stacks | pass | 2 stacks: Athletics bonus −2; removed: back to 0. |
+| Enhanced | pass | `apply(kal, 'enhanced', {value: {attribute: 'spd', amount: 2}})`: "Enhanced [Speed +2]", walking 30 → 40, Physical defense 15 unchanged. |
+| Restrained | pass | Fast-forwarded Athletics rolls `2d20kl + 2`; card "Disadvantage: Restrained." |
+| Prone target | pass | Melee attack on a Prone Brute: advantage; ranged: none. |
+| Dodge consumed | pass | The Brute's Dodge (system asks for 1 focus) → Dodging; Kal's sword attack dialog opens with the d20 on disadvantage, rolls `2d20kl + 2`, card "Disadvantage: target Dodging."; Dodging is gone afterwards. |
+| Brace ends on move | pass | Brace → Bracing; the Brute's attack on Kal would have disadvantage; moving Kal's token ends it. |
+| Gain Advantage, one target | pass | Card "The test succeeded" → "Advantage gained: zz Brute"; no advantage against Shallan; the next test against the Brute rolls `2d20kh + 2` and uses it up, the one after is `1d20 + 2`. |
+| Flamestance | pass | Using the talent enters the stance ("Stance: Flamestance" marker); Intimidation rolls `2d20kh + 2`, card "Advantage: Flamestance."; Deception none. |
+| Afflicted damage | pass | Afflicted [3 Energy] took Kal 12 → 9 at the end of his turn (Advanced Encounters turn), with our line and the system's damage card. |
+| End of scene | pass | Ending the encounter: Empowered (until the end of the scene) ends, the stance ends, Recover recharges 0 → 1; a chat line each. |
+| Long rest | pass | The system's long rest takes Exhausted 2 → 1. |
+
+**2. A world with conditions applied under v0.3.6, after the update, no manual step.** Pass. Four of the
+campaign's actors carried conditions applied under 0.3.x (Arlo: Prone, Unconscious, Exhausted 1, Slowed; Taren:
+Exhausted 1; two adversaries Prone or Dead). Read only, nothing changed: every effect resolves from the table's
+defaults with no problems (`api.rules`: `own` none, every field "default"); Arlo's walking speed is 0 and every skill
+−1, Taren's skills −1, as before.
+
+**3. A custom effect with movement, roll and link rules.** Full: pass. Remind only: **fail → fixed in 0.4.1.**
+`zz Mire` on Kal with `{mechanics: [movement half, skillModifier −2 on Perception], rolls: [advantage on Athletics],
+links: ['disoriented']}`.
+- "Rules on other effects" at full: walking 30 → 15, Perception −2, Athletics rolls `2d20kh + 2` with "Advantage:
+  zz Mire.", Disoriented "from zz Mire"; deleting the effect takes Disoriented with it.
+- At remind only: movement and Perception unchanged, Athletics rolls `1d20 + 2` with "Not applied (remind only): zz
+  Mire (advantage)." on the card, **but Disoriented was still applied.** Cause: links on effects that aren't
+  conditions followed only the engine's master switch (the interim rule of step 5, never moved to the setting).
+  Fix: `linkOther` (`scripts/conditions.js`) follows "Rules on other effects": full links, remind posts "Kal has zz
+  Mire. Also apply: Disoriented." and links nothing, off does nothing. Test in `test/links-glue.test.js`; the
+  setting's hint says so. A table condition's own links still follow its own setting. Released as **v0.4.1**;
+  the live re-check of remind only on 0.4.1 is below.
+
+**4. A stance talent's own effect carrying rules applies only in that stance.** Pass. The Stonestance talent's effect
+(on the item, transferred; the system disables it outside the stance) given `{mechanics: [Perception +1], rolls:
+[advantage on Athletics]}` through `api.setRules`: out of stance, nothing; in Stonestance, Perception +1 and
+"Stonestance: advantage" on Athletics; in Flamestance and after `api.endStance`, nothing again.
+
+**5. Performance.** Pass, no visible slowdown. `zz Kal` with 43 effects (40 with mechanics and `when` roll rules,
+plus Exhausted, Prone, Slowed): `actor.prepareData()` averages 1.6 ms over 200 runs (0.9 ms with the module's
+master switch off; 1.0 ms for Kal before the 40 effects); `api.modifiers` 0.6 ms; opening the sheet about 190 ms;
+a token move (update round trip) about 110 ms. The results were right with them (Perception: the forty ±1 cancel,
+Exhausted −1).
+
+**Authoring (#8, docs/LIVE-PASS.md checks 22–25).**
+
+| # | Result | Seen |
+| --- | --- | --- |
+| 22 | pass (GM half) | Prone's sheet (core `ActiveEffectConfig`): the ⋮ menu has "Rules (EP Cosmere Automations)"; one click opens one dialog "Rules: Prone" with rolls and links, both "default". The player half was skipped: no player login. Clicking the entry twice from a script opened three dialogs, so the one-dialog guard doesn't hold for repeated clicks; a single real click opens one. |
+| 23 | pass | `{"mechanics": [{"kind": "teleport"}]}` lists `mechanics[0]: unknown kind "teleport" (known: …)` under the editor and Save is disabled; `{mechanics: oops` shows "not valid JSON: …", Save disabled. |
+| 24 | pass | A plain effect `zz Mire` given movement half and Athletics advantage through the dialog: walking 30 → 15, the Athletics dialog opens with the d20 on advantage. |
+| 25 | pass | Slowed given `{"mechanics": []}` in the dialog: walking back to 30, the dialog shows mechanics "this effect"; "Reset to defaults": walking 15, the flag is gone, mechanics "default". |
+
+**Predicates (#7).** Pass. Example 1 (advantage on attacks against a Stunned or Surprised target): none on the
+plain Brute, advantage once it is Surprised, none again after; `facts` lists `target:condition:surprised` and
+`test:attack`. Example 3: disadvantage on Athletics outside Stonestance, none in it, none on Deception. A `when`
+with `test:atack`: the effect's rules are ignored with one console warning naming the unknown fact.
+
+**Still open:** the player half of check 22 and the relay checks (11, 18 of the first pass) need a player login.
 
 ## Development
 

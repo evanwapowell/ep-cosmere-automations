@@ -58,7 +58,7 @@
       },
       "otherEffects": {
         "name": "Rules on other effects",
-        "hint": "Rules carried by effects that are not one of the module's conditions or situational effects (a talent's, a stance's, an item's or a homebrew effect's). Full: their movement and skill changes and their advantages and disadvantages apply. Remind: they change nothing (the chat card of a test still lists their advantages and disadvantages). A condition's rules follow that condition's own setting."
+        "hint": "Rules carried by effects that are not one of the module's conditions or situational effects (a talent's, a stance's, an item's or a homebrew effect's). Full: their movement and skill changes, their advantages and disadvantages and the conditions they bring apply. Remind: they change nothing (the chat card of a test still lists their advantages and disadvantages, and a chat line names the conditions they would bring). A condition's rules follow that condition's own setting."
       }
     },
     "chat": {
@@ -67,6 +67,7 @@
       "ended": "{actor} is no longer {condition}.",
       "endedBecause": "{actor} is no longer {condition} ({reason} ended).",
       "alsoApply": "Also apply: {list}.",
+      "linkReminder": "{actor} has {effect}.",
       "stanceStarted": "{actor} takes {stance}.",
       "stanceEnded": "{actor} is no longer in a stance.",
       "stanceRemind": "{actor} takes {stance}.",

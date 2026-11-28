@@ -1,8 +1,8 @@
-# Live pass: phases 1–3 in a real world
+# Live pass: the module in a real world
 
 A runbook for a Claude session that controls the GM's browser (or for the GM by hand). Goal: confirm in a live
-Foundry what the Node tests could only fake, fix what breaks on branch `ccr-fa029c81-c7h62m`, and record the
-results under "Live pass results" in DESIGN.md.
+Foundry what the Node tests could only fake, fix what breaks on a branch from `main` (merged and released from
+`main`, per `CLAUDE.md`), and record the results under "Live pass results (date)" in DESIGN.md.
 
 Ground rules: test only on a scene whose name starts with `zz`; use test actors made for the purpose and delete
 them, the scene and the test chat messages afterwards; never touch the campaign's own actors, scenes or journals;
@@ -90,12 +90,34 @@ For each: what to do → what should happen. Record pass / fail / note.
 25. Slowed on `zz Kal`: give it `{"mechanics": []}` → movement is back to normal; "Reset to defaults" → halved
     again, and the dialog shows every field as "default".
 
+**Portable rules** (#9; "Rules on other effects" at full unless a check says otherwise)
+26. Regression: checks 1–6, 8, 12, 13, 15–17, 19–21 and Afflicted's damage at the end of a turn behave as in the
+    last release before the change.
+27. Before switching the world to the new version, note the conditions already on actors (`api.list`). After the
+    update, with no manual step: `api.rules(effect)` on each shows no problems and every field "default", and the
+    sheet's numbers are what they were.
+28. A plain effect on `zz Kal` created with `{"mechanics": [{"kind": "movement", "op": "half"}, {"kind":
+    "skillModifier", "amount": -2, "skills": ["prc"]}], "rolls": [{"who": "self", "mode": "advantage", "tests":
+    {"skills": ["ath"]}}], "links": ["disoriented"]}`: at full, movement halves, Perception −2, Athletics with
+    advantage and the card names the effect, Disoriented "from" it; deleting it takes Disoriented away. At remind
+    only (create it again): nothing changes, the card says "Not applied (remind only)", a chat line says "Also
+    apply: Disoriented." and Disoriented is **not** applied. At off: nothing, no line.
+29. The Stonestance talent's own effect given `{"rolls": [{"who": "self", "mode": "advantage", "tests":
+    {"skills": ["ath"]}}]}` (`api.setRules`): no advantage out of stance or in Flamestance; advantage in Stonestance.
+    Take the rules off again afterwards (`api.setRules(effect, null)`).
+30. Performance: give `zz Kal` 40 effects with rules; opening the sheet and moving the token show no visible
+    slowdown. Console: time `actor.prepareData()` over 200 runs with the module's master switch on and off.
+31. Predicates: the three examples under "Predicates on roll rules" in DESIGN.md, and one `when` with a typo (a
+    console warning, no effect).
+
 ## 5. Clean up
 
-Delete the `zz` scene, the `zz` actors and the test chat messages. Put the module settings back to what the
-GM wants (all remind-only is the safe default), or disable the module.
+Delete the `zz` scene, the `zz` actors (and their folder) and the test chat messages: note the id of the last chat
+message before starting and delete everything after it. Put the module settings and the roll mode back to what
+they were before the pass (record them first), or to remind-only (the safe default) if the GM prefers.
 
 ## 6. Report
 
-Add "Live pass results (date)" to DESIGN.md: each check pass/fail with a line of what was seen, the fixes made
-(with commit), and the answers to the open questions (token ruler speed, Automated Actions overlap).
+Add "Live pass results (date)" to DESIGN.md: the versions (Foundry, system, modules, this module), each check
+pass/fail with a line of what was seen, the fixes made (with commit and release), and the answers to any open
+questions.

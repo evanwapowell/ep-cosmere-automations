@@ -10,7 +10,7 @@ import { FakeActor, FakeItem, flush, Hooks, installFakeFoundry } from './fake-fo
 
 const IDS = ['exhausted', 'immobilized', 'prone', 'restrained', 'slowed', 'stunned'];
 const env = installFakeFoundry({
-    settings: { ...Object.fromEntries(IDS.map((id) => [`condition.${id}`, 'full'])), durations: 'full', stances: 'full' },
+    settings: { ...Object.fromEntries(IDS.map((id) => [`condition.${id}`, 'full'])), durations: 'full', stances: 'full', otherEffects: 'full' },
 });
 await import('../scripts/main.js');
 Hooks.callAll('init');
@@ -149,6 +149,37 @@ test('the engine switched off: a custom effect brings nothing', async () => {
         assert.deepEqual(statuses(actor), []);
     } finally {
         env.settings.set('enabled', true);
+    }
+});
+
+test('"Rules on other effects" at remind: a custom effect\'s links only remind; off: nothing', async () => {
+    env.settings.set('otherEffects', 'remind');
+    try {
+        const actor = new FakeActor({ name: 'Szeth' });
+        const before = env.chat.length;
+        await custom(actor, 'Mire', { links: ['immobilized', 'slowed'] });
+        assert.deepEqual(statuses(actor), [], 'nothing applied');
+        const lines = env.chat.slice(before).map((m) => m.content).join('\n');
+        assert.match(lines, /Szeth.* has .*Mire/);
+        assert.match(lines, /Also apply: Immobilized, Slowed\./);
+
+        env.settings.set('otherEffects', 'off');
+        const quiet = env.chat.length;
+        await custom(actor, 'Webbed', { links: ['immobilized'] });
+        assert.deepEqual(statuses(actor), []);
+        assert.equal(env.chat.length, quiet, 'no line either');
+    } finally {
+        env.settings.set('otherEffects', 'full');
+    }
+
+    // A table condition's own links still follow the condition's setting, whatever "Rules on other effects" says.
+    env.settings.set('otherEffects', 'off');
+    try {
+        const actor = new FakeActor({ name: 'Eshonai' });
+        await hudToggle(actor, 'prone');
+        assert.deepEqual(statuses(actor), ['prone', 'slowed']);
+    } finally {
+        env.settings.set('otherEffects', 'full');
     }
 });
 
