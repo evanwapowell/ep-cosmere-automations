@@ -23,7 +23,7 @@ import { instanceId } from './logic/values.js';
 import { defaultDuration } from './logic/rules.js';
 import { rulesOf } from './rules.js';
 import { buildDuration, durationText, shouldAskDuration } from './durations.js';
-import { conditionMode, engineEnabled, featureMode, SETTINGS } from './settings.js';
+import { conditionMode, effectRulesMode, engineEnabled, featureMode, SETTINGS } from './settings.js';
 import { actorName, esc, safe, serial, statusLabel, t, warn } from './util.js';
 import { askDetails } from './values.js';
 
@@ -151,14 +151,27 @@ async function onCreate(effect, options, userId) {
 
 /**
  * An effect that isn't a table condition (a talent's, an item's, a homebrew "Pinned") can bring conditions with it
- * too, when its resolved rules have `links`. It has no setting of its own, so this follows the engine's master
- * switch only; the linked conditions end with it like a table condition's do. A disabled effect brings nothing.
+ * too, when its resolved rules have `links`. It follows "Rules on other effects", like its other rules: full brings
+ * the linked conditions (they end with it like a table condition's do), remind only posts a reminder naming them,
+ * off does nothing. A disabled effect brings nothing.
  */
 async function linkOther(effect, actor, options) {
     if (effect.disabled) return;
     const links = rulesOf(effect).links;
     if (!links?.length) return;
-    await applyLinks(effect, actor, options, links, { chainKey: effectKey(effect.id), label: effect.name || effect.id });
+    const mode = effectRulesMode(null);
+    if (mode === MODES.OFF) return;
+    const label = effect.name || effect.id;
+    if (mode === MODES.REMIND) {
+        const list = links.map((link) => statusLabel(link, CONDITIONS_BY_ID[link]?.name)).join(', ');
+        await postLine(
+            actor,
+            t('chat.linkReminder', { effect: `<b>${esc(label)}</b>`, actor: `<b>${esc(actorName(actor))}</b>` }, '{actor} has {effect}.'),
+            { reminder: t('chat.alsoApply', { list }, 'Also apply: {list}.') },
+        );
+        return;
+    }
+    await applyLinks(effect, actor, options, links, { chainKey: effectKey(effect.id), label });
 }
 
 /**

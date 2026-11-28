@@ -4,8 +4,11 @@ A Foundry VTT (v13) module that automates rules of the Cosmere RPG system (`cosm
 starting with real conditions: conditions that change numbers and rolls, carry values, last for a set time, bring
 linked conditions with them and end by themselves.
 
-**Status:** phases 1–3 are written and unit-tested, but have not been tried in a live world yet. Don't use them
-in a game until they have been tested on a throwaway scene. See [DESIGN.md](DESIGN.md).
+**Status:** conditions, durations and the advantage/disadvantage layer have had live passes in a real world
+(Foundry 13.351, cosmere-rpg 3.1.2) on v0.3.1 to v0.3.6, and rules on effects (0.4.0) on 2026-11-27, with the one
+fault found fixed in 0.4.1. Not yet checked live: anything that needs a player login (a player's attack using up an
+NPC's Dodge through the GM relay, the Rules entry hidden from players) and two GMs at once. Everything starts in
+remind-only mode; switch features to full one at a time. See "Live pass results" in [DESIGN.md](DESIGN.md).
 
 ## What it does
 
@@ -89,7 +92,9 @@ await api.setRules(effect, null);        // back to the defaults
 api.validateRules({ links: ['nope'] });  // ['links: unknown condition "nope"']
 ```
 
-Rules on effects that are not conditions follow the setting "Rules on other effects".
+Rules on effects that are not conditions (their movement and skill changes, advantages and disadvantages, and the
+conditions they bring) follow the setting "Rules on other effects"; in remind-only mode they change nothing and the
+chat says what they would have done.
 
 ## Development
 
