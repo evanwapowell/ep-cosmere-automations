@@ -1128,7 +1128,8 @@ Exhausted 1; two adversaries Prone or Dead). Read only, nothing changed: every e
 defaults with no problems (`api.rules`: `own` none, every field "default"); Arlo's walking speed is 0 and every skill
 −1, Taren's skills −1, as before.
 
-**3. A custom effect with movement, roll and link rules.** Full: pass. Remind only: **fail → fixed in 0.4.1.**
+**3. A custom effect with movement, roll and link rules.** Full: pass. Remind only: **fail → fixed in 0.4.1,
+pass on re-check.**
 `zz Mire` on Kal with `{mechanics: [movement half, skillModifier −2 on Perception], rolls: [advantage on Athletics],
 links: ['disoriented']}`.
 - "Rules on other effects" at full: walking 30 → 15, Perception −2, Athletics rolls `2d20kh + 2` with "Advantage:
@@ -1138,8 +1139,12 @@ links: ['disoriented']}`.
   conditions followed only the engine's master switch (the interim rule of step 5, never moved to the setting).
   Fix: `linkOther` (`scripts/conditions.js`) follows "Rules on other effects": full links, remind posts "Kal has zz
   Mire. Also apply: Disoriented." and links nothing, off does nothing. Test in `test/links-glue.test.js`; the
-  setting's hint says so. A table condition's own links still follow its own setting. Released as **v0.4.1**;
-  the live re-check of remind only on 0.4.1 is below.
+  setting's hint says so. A table condition's own links still follow its own setting. Commit c3ba0c1, released as
+  **v0.4.1**.
+- **Re-checked on v0.4.1** (same day, after updating from the Setup screen; a throwaway `zz Kal` with no scene,
+  deleted afterwards with its three chat lines): remind only: no Disoriented, walking 30, no advantage, one line
+  "zz Kal has zz Mire. Also apply: Disoriented."; off: nothing and no line; full: Disoriented "from zz Mire",
+  walking 15, advantage on Athletics. Deleting the effect each time left nothing behind. Pass.
 
 **4. A stance talent's own effect carrying rules applies only in that stance.** Pass. The Stonestance talent's effect
 (on the item, transferred; the system disables it outside the stance) given `{mechanics: [Perception +1], rolls:
